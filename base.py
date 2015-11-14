@@ -36,7 +36,45 @@ def errors(predicted, actual):
             return T.neq(predicted, actual)
         else:
             raise NotImplementedError()
-
+            
+def turn_into_2_labels(predicted, actual):
+    predict = numpy.array([1
+        if predicted[i] ==4
+        else 0
+        for i in xrange(predicted.shape[0])])
+            
+    actual = numpy.array([1
+        if actual[i] ==4
+        else 0
+        for i in xrange(actual.shape[0])])
+            
+    return predict, actual
+    
+def confusion_matrix(predicted_states, actual_states, pat):
+    (predict, actual) = turn_into_2_labels(
+        predicted = predicted_states,
+        actual = actual_states
+    )
+            
+    true_wake = 0
+    true_sleep = 0
+    false_sleep = 0
+    false_wake = 0
+    
+    for i in xrange(len(predict)):
+        if predict[i] == 1:
+            if actual[i] == 1:
+                true_wake += 1
+            else:
+                false_wake += 1
+        else:
+            if actual[i] == 1:
+                false_sleep += 1
+            else:
+                true_sleep += 1
+                
+    return [true_sleep, false_wake, false_sleep, true_wake]
+    
 def errors2(predicted_states, actual_states, pat):
     """Return 1 if y!=y_predicted (error) and 0 if right
 
@@ -51,15 +89,10 @@ def errors2(predicted_states, actual_states, pat):
             ('actual_states', actual_states.type, 'predicted_states', predicted_states.type)
         )
     
-    predict = numpy.array([1
-        if predicted_states[i] ==4
-        else 0
-        for i in xrange(predicted_states.shape[0])])
-            
-    actual = numpy.array([1
-        if actual_states[i] ==4
-        else 0
-        for i in xrange(actual_states.shape[0])])
+    (predict, actual) = turn_into_2_labels(
+        predicted = predicted_states,
+        actual = actual_states
+    )
             
     base_folder = "temp_plots_for_2"
     if not os.path.isdir(base_folder):

@@ -6,7 +6,6 @@ Created on Wed Nov 04 20:27:07 2015
 """
 
 import numpy
-import theano
 import scipy.signal as signal
 import matplotlib.pyplot as plt
 
@@ -86,7 +85,7 @@ def create_av_disp(sequence, rank, window_size=1):
     data_labels = data_labels - numpy.amin(data_labels)
     return data_labels
     
-def create_av(sequence, rank, window_size=1):
+def create_av(sequence, rank=-1, window_size=1):
     """
     Normalize sequence matrix and get average and dispersion
     """
@@ -95,10 +94,12 @@ def create_av(sequence, rank, window_size=1):
     #get average and dispersion
     avg_seq = [numpy.mean(sequence[i: i + window_size])
         for i in xrange(len(sequence)-window_size+1)]
-    #11^3 variant for labels
-    arounded_seq = numpy.around(avg_seq, rank)*pow(10, rank)
-    arounded_seq = arounded_seq.astype(int)
-    result_seq = arounded_seq - numpy.amin(arounded_seq)    
+    if rank > -1:
+        arounded_seq = numpy.around(avg_seq, rank)*pow(10, rank)
+        arounded_seq = arounded_seq.astype(int)
+        result_seq = arounded_seq - numpy.amin(arounded_seq)
+    else:
+        result_seq = avg_seq - numpy.amin(avg_seq)
     return result_seq    
     
 if __name__ == '__main__':

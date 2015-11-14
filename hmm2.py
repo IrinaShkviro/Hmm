@@ -11,7 +11,7 @@ import numpy
 
 from sklearn import hmm
 
-from base import errors, errors2
+from base import errors, errors2, confusion_matrix
 from ichi_reader import ICHISeqDataReader
 
 def update_params_on_patient(pi_values, a_values, b_values, array_from_hidden,
@@ -46,37 +46,39 @@ def get_error_on_patient(model, visible_set, hidden_set, algo, all_labels = True
             predicted=predicted_states,
             actual=hidden_set
         )
+        return error_array.eval().mean()
     else:
-        error_array=errors2(
-            predicted_states=predicted_states,
-            actual_states=hidden_set,
+        error_array = confusion_matrix(
+            predicted_states = predicted_states,
+            actual_states = hidden_set,
             pat = pat
         )
-    return error_array.eval().mean()
+        
+        return error_array
                         
 def train():
     all_train = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
-			'p10a','p011','p012','p013','p014','p15a','p15b','p016',
+			'p10a','p011','p013','p014','p15a','p15b','p016',
                'p017','p018','p019','p020','p021','p022','p023','p025',
                'p026','p027','p028','p029','p030','p031','p032','p033',
                'p034','p035','p036','p037','p038','p040','p042','p043',
                'p044','p045','p047','p048','p049','p050','p051']
-    train_data_names = ['p007', 'p028', 'p005', 'p08b']
-    valid_data = all_train
+    train_data_names = all_train
+    valid_data = ['p012']
     
-    
+    '''
     train_mask = numpy.in1d(all_train, train_data_names)
     train_indexes = numpy.where(train_mask)
     valid_data = numpy.delete(valid_data, train_indexes)
-    
+    '''
 
     n_train_patients=len(train_data_names)
     
     rank = 5
-    window_size = 300
+    window_size = 20
     n_visible=pow(10, rank) + 2 - window_size
     n_hidden=7
-    preprocess_algo = "filter+avg_disp"
+    preprocess_algo = "filter+avg"
     if (preprocess_algo == "avg_disp" or preprocess_algo == "filter+avg_disp"):
         n_visible *= 10
         
@@ -144,17 +146,26 @@ def train():
             visible_set=valid_set_x.eval(),
             hidden_set=valid_set_y.eval(),
             algo=predict_algo,
-            pat = valid_patient
+            pat = valid_patient,
+            all_labels = False
         )
         
         #print(patient_error, ' error for patient ' + valid_patient)
         error_array.append(patient_error)
         gc.collect() 
-    
+    '''
     print(error_array)             
     print('mean value of error: ', numpy.round(numpy.mean(error_array), 6))
     print('min value of error: ', numpy.round(numpy.amin(error_array), 6))
     print('max value of error: ', numpy.round(numpy.amax(error_array), 6))
+    '''
+    
+    total_conf_matrix = numpy.sum(error_array, axis = 0)
+    
+    print('total true_sleep: ', total_conf_matrix[0])
+    print('total false_wake: ', total_conf_matrix[1])
+    print('total false_sleep: ', total_conf_matrix[2])
+    print('total true_wake: ', total_conf_matrix[3])
 
 if __name__ == '__main__':
     train()

@@ -16,9 +16,9 @@ import theano
 import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
-from mlp import HiddenLayer
-from dA import dA
-from MyVisualizer import visualize_pretraining
+from hidden_layer import HiddenLayer
+from da import dA
+#from MyVisualizer import visualize_pretraining
 from cg import pretrain_sda_cg
 from sgd import pretrain_sda_sgd
 
@@ -107,11 +107,13 @@ class SdA(object):
             else:
                 layer_input = self.sigmoid_layers[-1].output
 
-            sigmoid_layer = HiddenLayer(rng=numpy_rng,
-                                        input=layer_input,
-                                        n_in=input_size,
-                                        n_out=hidden_layers_sizes[i],
-                                        activation=T.nnet.sigmoid)
+            sigmoid_layer = HiddenLayer(
+                rng=numpy_rng,
+                input=layer_input,
+                n_in=input_size,
+                n_out=hidden_layers_sizes[i],
+                activation=T.nnet.sigmoid
+            )
             # add the layer to our list of layers
             self.sigmoid_layers.append(sigmoid_layer)
             # its arguably a philosophical question...
@@ -123,12 +125,14 @@ class SdA(object):
 
             # Construct a denoising autoencoder that shared weights with this
             # layer
-            dA_layer = dA(numpy_rng=numpy_rng,
-                          theano_rng=theano_rng,
-                          input=layer_input,
-                          n_visible=input_size,
-                          n_hidden=hidden_layers_sizes[i],
-                          theta=sigmoid_layer.theta)
+            dA_layer = dA(
+                numpy_rng=numpy_rng,
+                theano_rng=theano_rng,
+                input=layer_input,
+                n_visible=input_size,
+                n_hidden=hidden_layers_sizes[i],
+                theta=sigmoid_layer.theta
+            )
             self.dA_layers.append(dA_layer)
         sda_input = T.vector('sda_input')  # the data is presented as rasterized images
         self.da_layers_output_size = hidden_layers_sizes[-1]
@@ -144,13 +148,16 @@ class SdA(object):
         self.classifier = classifier
 
 def pretrain_SdA(train_names,
-             output_folder, base_folder,
-             window_size,
-             corruption_levels,
-             pretraining_epochs,
-             pretrain_lr,
-             pretrain_algo,
-             hidden_layers_sizes):
+                 read_window,
+                 read_algo,
+                 read_rank,                 
+                 window_size,
+                 corruption_levels,
+                 pretraining_epochs,
+                 pretrain_lr,
+                 pretrain_algo,
+                 hidden_layers_sizes,
+                 output_folder, base_folder):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
     This is demonstrated on ICHI.
@@ -185,21 +192,30 @@ def pretrain_SdA(train_names,
     start_time = timeit.default_timer()
     
     if (pretrain_algo == "sgd"):
-        pretrained_sda = pretrain_sda_sgd(sda=sda,
-                                      train_names=train_names,
-                                      window_size=window_size,
-                                      pretraining_epochs=pretraining_epochs,
-                                      pretrain_lr=pretrain_lr,
-                                      corruption_levels=corruption_levels)
+        pretrained_sda = pretrain_sda_sgd(
+            sda=sda,
+            train_names=train_names,
+            read_window = read_window,
+            read_algo = read_algo,
+            read_rank = read_rank,
+            window_size=window_size,
+            pretraining_epochs=pretraining_epochs,
+            pretrain_lr=pretrain_lr,
+            corruption_levels=corruption_levels
+        )
     else:
-        pretrained_sda = pretrain_sda_cg(sda=sda,
-                                      train_set_x=train_names,
-                                      window_size=window_size,
-                                      pretraining_epochs=pretraining_epochs,
-                                      corruption_levels=corruption_levels)
+        pretrained_sda = pretrain_sda_cg(
+            sda=sda,
+            train_names=train_names,
+            window_size=window_size,
+            pretraining_epochs=pretraining_epochs,
+            corruption_levels=corruption_levels,
+            preprocess_algo = pretrain_algo,
+            read_window = read_window
+        )
                          
     end_time = timeit.default_timer()
-    
+    '''
     for i in xrange(sda.n_layers):
         print(i, 'i pretrained')
         visualize_pretraining(train_cost=pretrained_sda.dA_layers[i].train_cost_array,
@@ -210,7 +226,7 @@ def pretrain_SdA(train_names,
                               da_layer=i,
                               datasets_folder=output_folder,
                               base_folder=base_folder)
-
+    '''
     print >> sys.stderr, ('The pretraining code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
