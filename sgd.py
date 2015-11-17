@@ -6,7 +6,6 @@ Created on Fri Nov 13 11:28:46 2015
 """
 
 import gc
-import timeit
 
 import numpy
 

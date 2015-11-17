@@ -240,29 +240,29 @@ def test_sda(
     return error_array
     
 def test_all_params():
-    window_size = 100
+    window_size = 30
     all_train = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
 			'p10a','p011','p012','p013','p014','p15a','p15b','p016',
                'p017','p018','p019','p020','p021','p022','p023','p025',
                'p026','p027','p028','p029','p030','p031','p032','p033',
                'p034','p035','p036','p037','p038','p040','p042','p043',
                'p044','p045','p047','p048','p049','p050','p051']
-    without_test = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
-			'p10a','p011','p012','p014','p15a','p15b','p016',
+    without_train = ['p002','p003','p08a','p09a','p09b',
+			'p10a','p011','p012','p013','p014','p15a','p15b','p016',
                'p017','p018','p019','p020','p021','p022','p023','p025',
-               'p026','p027','p028','p029','p030','p031','p032','p033',
-               'p034','p035','p036','p037','p040','p042','p043',
+               'p026','p027','p029','p030','p031','p032','p033',
+               'p034','p035','p036','p037','p038','p040','p042','p043',
                'p044','p045','p047','p048','p049','p050','p051']
-    train_data = without_test
-    test_data = ['p013', 'p038']
+    train_data = ['p007', 'p028', 'p005', 'p08b']
+    test_data = without_train
     
-    read_window = 1
-    read_algo = "filter"
-    read_rank = 20
+    read_window = 20
+    read_algo = "filter+avg"
+    read_rank = 10
     
     corruption_levels = [.1, .2]
     hidden_layers_sizes = [window_size/2, window_size/3]
-    pretraining_epochs = 15
+    pretraining_epochs = 20
     pretrain_lr=.03        
     pretrain_algo = "sgd"
     

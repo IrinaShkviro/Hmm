@@ -79,7 +79,7 @@ class ICHISeqDataReader(object):
         return (set_x, set_y) 
     
     # read one doc in sequence
-    def read_next_doc(self, algo, rank=1, window=1):    
+    def read_next_doc(self, algo, rank=1, window=1, divide = False):    
        
         # sequence_matrix = array[size of doc][data.z, data.gt]
         sequence_matrix = self.get_sequence()
@@ -134,15 +134,30 @@ class ICHISeqDataReader(object):
         d_y = d_y[window/2: len(d_y) + window/2 -window +1]
            
         gc.collect()
-        
-        set_x = theano.shared(numpy.asarray(d_x),
+        if not divide:
+            set_x = theano.shared(numpy.asarray(d_x),
                                      borrow=True)
-        set_y = T.cast(theano.shared(numpy.asarray(d_y,
-                                                   dtype=theano.config.floatX),
-                                     borrow=True), 'int32')
+            set_y = T.cast(theano.shared(numpy.asarray(d_y,
+                                                       dtype=theano.config.floatX),
+                                         borrow=True), 'int32')       
+            return (set_x, set_y)
         
-        return (set_x, set_y)
+        data = zip(d_x, d_y) #pairs (modified z-coord, label)
+        visible_seqs = []
         
+        for label in xrange(7):
+            d_x_for_label=[]
+            for row in data:
+                if row[-1] == label:
+                    d_x_for_label.append(row[0])
+            set_x = theano.shared(numpy.asarray(d_x_for_label,
+                                                       dtype=theano.config.floatX),
+                                         borrow=True)
+            
+            visible_seqs.append(set_x)
+        
+        return visible_seqs
+                
     def init_sequence(self, dataset):
         self.sequence_files = []
         

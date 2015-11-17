@@ -27,29 +27,20 @@ def train_da_cg(da, train_set, window_size, corruption_level, training_epochs):
         corruption_level=corruption_level
     )
            
-    #  compile a theano function that returns the cost
-    conj_cost = theano.function(
-        inputs=[index],
-        outputs=cost,
-        givens={
-            x: train_set[index: index + window_size]
-        },
-        name="conj_cost"
-    )
-
-    # compile a theano function that returns the gradient with respect to theta
-    conj_grad = theano.function(
-        [index],
-        T.grad(cost, da.theta),
-        givens={
-            x: train_set[index: index + window_size]
-        },
-        name="conj_grad"
-    )
-    
     # creates a function that computes the average cost on the training set
     def train_fn(theta_value):
         da.theta.set_value(theta_value, borrow=True)
+        
+        #  compile a theano function that returns the cost
+        conj_cost = theano.function(
+            inputs=[index],
+            outputs=cost,
+            givens={
+                x: train_set[index: index + window_size]
+            },
+            name="conj_cost"
+        )
+    
         train_losses = [conj_cost(i)
                         for i in xrange(n_train_samples)]
                             
@@ -64,6 +55,17 @@ def train_da_cg(da, train_set, window_size, corruption_level, training_epochs):
     # respect to theta
     def train_fn_grad(theta_value):
         da.theta.set_value(theta_value, borrow=True)
+        
+        # compile a theano function that returns the gradient with respect to theta
+        conj_grad = theano.function(
+            [index],
+            T.grad(cost, da.theta),
+            givens={
+                x: train_set[index: index + window_size]
+            },
+            name="conj_grad"
+        )
+    
         grad = conj_grad(0)
         for i in xrange(1, n_train_samples):
             grad += conj_grad(i)
@@ -148,30 +150,32 @@ def pretraining_functions_sda_cg(sda, train_set_x, window_size, corruption_level
         return grad / n_train_samples
             
     return train_fn, train_fn_grad
-    
-def pretrain_sda_cg(sda, train_names, read_window, window_size,
-                    preprocess_algo, pretraining_epochs, corruption_levels):
+
+def pretrain_sda_cg(sda, train_names, read_window, read_algo, read_rank, 
+                    window_size, pretraining_epochs, corruption_levels):
     ## Pre-train layer-wise
     print '... getting the pretraining functions'
     import scipy.optimize
-    train_reader = ICHISeqDataReader(train_names)
-    n_train_patients =  len(train_names)
     
-    for patients in xrange(n_train_patients):
-        train_set_x, train_set_y = train_reader.read_next_doc(
-            preprocess_algo = preprocess_algo,
-            window_size = read_window
-        )
-        pretraining_fn, pretraining_update = pretraining_functions_sda_cg(
-            sda=sda,
-            train_set_x=train_set_x,
-            window_size=window_size,
-            corruption_levels=corruption_levels
-        )
-        print '... pre-training the model'
-        # using scipy conjugate gradient optimizer
-        print ("Optimizing using scipy.optimize.fmin_cg...")
-        for i in xrange(sda.n_layers):
+    for i in xrange(sda.n_layers):
+        train_reader = ICHISeqDataReader(train_names)
+        n_train_patients =  len(train_names)
+        
+        for patients in xrange(n_train_patients):
+            train_set_x, train_set_y = train_reader.read_next_doc(
+                algo = read_algo,
+                window = read_window,
+                rank = read_rank
+            )
+            pretraining_fn, pretraining_update = pretraining_functions_sda_cg(
+                sda=sda,
+                train_set_x=train_set_x,
+                window_size=window_size,
+                corruption_levels=corruption_levels
+            )
+            print '... pre-training the model'
+            # using scipy conjugate gradient optimizer
+            print ("Optimizing using scipy.optimize.fmin_cg...")
             best_w_b = scipy.optimize.fmin_cg(
                 f=partial(pretraining_fn, da_index = i),
                 x0=numpy.zeros((sda.dA_layers[i].n_visible + 1) * sda.dA_layers[i].n_hidden,

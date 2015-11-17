@@ -29,13 +29,9 @@ def errors(predicted, actual):
                 ('actual', actual.type, 'y_pred', predicted.type)
             )
 
-        # check if y is of the correct datatype
-        if actual.dtype.startswith('int'):
-            # the T.neq operator returns a vector of 0s and 1s, where 1
-            # represents a mistake in prediction
-            return T.neq(predicted, actual)
-        else:
-            raise NotImplementedError()
+        # the T.neq operator returns a vector of 0s and 1s, where 1
+        # represents a mistake in prediction
+        return T.neq(predicted, actual)
             
 def turn_into_2_labels(predicted, actual):
     predict = numpy.array([1
