@@ -6,8 +6,8 @@ Created on Sun Nov 08 23:51:34 2015
 """
 
 import gc
-
 import numpy
+import xlrd, xlwt
 
 from sklearn import hmm
 
@@ -55,35 +55,18 @@ def get_error_on_patient(model, visible_set, hidden_set, algo, all_labels = True
         )
         
         return error_array
-                        
-def train():
-    all_train = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
-			'p10a','p011','p013','p014','p15a','p15b','p016',
-               'p017','p018','p019','p020','p021','p022','p023','p025',
-               'p026','p027','p028','p029','p030','p031','p032','p033',
-               'p034','p035','p036','p037','p038','p040','p042','p043',
-               'p044','p045','p047','p048','p049','p050','p051']
-    train_data_names = all_train
-    valid_data = ['p012']
-    
-    '''
-    train_mask = numpy.in1d(all_train, train_data_names)
-    train_indexes = numpy.where(train_mask)
-    valid_data = numpy.delete(valid_data, train_indexes)
-    '''
-
-    n_train_patients=len(train_data_names)
-    
-    rank = 5
-    window_size = 20
-    n_visible=pow(10, rank) + 2 - window_size
-    n_hidden=7
-    preprocess_algo = "filter+avg"
-    if (preprocess_algo == "avg_disp" or preprocess_algo == "filter+avg_disp"):
-        n_visible *= 10
+ 
+def create_hmm(
+    train_data_names,
+    n_hidden,
+    n_visible,
+    read_algo,
+    read_rank,
+    read_window):
         
     train_reader = ICHISeqDataReader(train_data_names)
-    valid_reader = ICHISeqDataReader(valid_data)
+    
+    n_train_patients=len(train_data_names)
     
     pi_values = numpy.zeros((n_hidden,))
     a_values = numpy.zeros((n_hidden, n_hidden)) 
@@ -93,9 +76,9 @@ def train():
     for train_patient in xrange(n_train_patients):
         #get data divided on sequences with respect to labels
         train_set_x, train_set_y = train_reader.read_next_doc(
-            algo = preprocess_algo,
-            rank = rank,
-            window = window_size
+            algo = read_algo,
+            rank = read_rank,
+            window = read_window
         )
         
         pi_values, a_values, b_values, array_from_hidden = update_params_on_patient(
@@ -129,16 +112,25 @@ def train():
     hmm_model.emissionprob_ = b_values 
     gc.collect()
     print('MultinomialHMM created')
-    predict_algo = 'viterbi'
     
-    error_array = []
+    return hmm_model
+    
+def test(
+    hmm_model,
+    valid_data,
+    read_algo,
+    read_window,
+    read_rank,
+    predict_algo):
+        
+    valid_reader = ICHISeqDataReader(valid_data)
 
     for valid_patient in valid_data:
         #get data divided on sequences with respect to labels
         valid_set_x, valid_set_y = valid_reader.read_next_doc(
-            algo = preprocess_algo,
-            rank = rank,
-            window = window_size
+            algo = read_algo,
+            rank = read_rank,
+            window = read_window
         )
         
         patient_error = get_error_on_patient(
@@ -147,25 +139,64 @@ def train():
             hidden_set=valid_set_y.eval(),
             algo=predict_algo,
             pat = valid_patient,
-            all_labels = False
+            all_labels = True
         )
         
-        #print(patient_error, ' error for patient ' + valid_patient)
-        error_array.append(patient_error)
-        gc.collect() 
+        print(patient_error, ' error for patient ' + valid_patient)
+        gc.collect()
+    return patient_error
+                           
+def train():
+    all_train = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
+			'p10a','p011','p013','p014','p15a','p15b','p016',
+               'p017','p018','p019','p020','p021','p022','p023','p025',
+               'p026','p027','p028','p029','p030','p031','p032','p033',
+               'p034','p035','p036','p037','p038','p040','p042','p043',
+               'p044','p045','p047','p048','p049','p050','p051']
+    train_data = all_train
+    
     '''
-    print(error_array)             
-    print('mean value of error: ', numpy.round(numpy.mean(error_array), 6))
-    print('min value of error: ', numpy.round(numpy.amin(error_array), 6))
-    print('max value of error: ', numpy.round(numpy.amax(error_array), 6))
+    train_mask = numpy.in1d(all_train, train_data_names)
+    train_indexes = numpy.where(train_mask)
+    valid_data = numpy.delete(valid_data, train_indexes)
     '''
     
-    total_conf_matrix = numpy.sum(error_array, axis = 0)
+    read_rank = 5
+    read_window = 20
+    n_visible=pow(10, read_rank) + 2 - read_window
+    n_hidden=7
+    read_algo = "filter+avg"
+    if (read_algo == "avg_disp" or read_algo == "filter+avg_disp"):
+        n_visible *= 10
+       
+    predict_algo = 'viterbi'
     
-    print('total true_sleep: ', total_conf_matrix[0])
-    print('total false_wake: ', total_conf_matrix[1])
-    print('total false_sleep: ', total_conf_matrix[2])
-    print('total true_wake: ', total_conf_matrix[3])
+    result_list = xlwt.Workbook()
+    result_sheet = result_list.add_sheet('Test')
+    for test_pat_num in xrange(len(train_data)):
+        test_pat = train_data.pop(test_pat_num)
+        #output_folder=('all_data, [%s]')%(test_pat)
+        hmm_model = create_hmm(
+            train_data_names = train_data,
+            n_hidden = n_hidden,
+            n_visible = n_visible,
+            read_algo = read_algo,
+            read_rank = read_rank,
+            read_window = read_window
+        )
+        
+        error = test(
+            hmm_model = hmm_model,
+            valid_data = [test_pat],
+            read_algo = read_algo,
+            read_window = read_window,
+            read_rank = read_rank,
+            predict_algo = predict_algo
+        )
+        result_sheet.write(test_pat_num, 0, test_pat)
+        result_sheet.write(test_pat_num, 1, error)
+        train_data.insert(test_pat_num, test_pat)   
+    result_list.save('hmm2.xls')
 
 if __name__ == '__main__':
     train()
