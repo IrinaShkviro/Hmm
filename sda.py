@@ -18,7 +18,7 @@ from theano.tensor.shared_randomstreams import RandomStreams
 
 from hidden_layer import HiddenLayer
 from da import dA
-#from MyVisualizer import visualize_pretraining
+from visualizer import visualize_pretraining
 from cg import pretrain_sda_cg
 from sgd import pretrain_sda_sgd
 
@@ -215,18 +215,18 @@ def pretrain_SdA(train_names,
         )
                          
     end_time = timeit.default_timer()
-    '''
+    
     for i in xrange(sda.n_layers):
         print(i, 'i pretrained')
         visualize_pretraining(train_cost=pretrained_sda.dA_layers[i].train_cost_array,
                               window_size=window_size,
-                              learning_rate=0,
+                              learning_rate=pretrain_lr,
                               corruption_level=corruption_levels[i],
                               n_hidden=sda.dA_layers[i].n_hidden,
                               da_layer=i,
                               datasets_folder=output_folder,
                               base_folder=base_folder)
-    '''
+    
     print >> sys.stderr, ('The pretraining code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
