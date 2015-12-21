@@ -28,11 +28,6 @@ suitable for large datasets.
 """
 __docformat__ = 'restructedtext en'
 
-import os
-import sys
-import time
-import gc
-
 import numpy
 
 import theano
@@ -40,6 +35,9 @@ import theano.tensor as T
 
 from ichi_reader import ICHISeqDataReader
 from sgd import train_logistic_sgd
+from cg import train_logistic_cg
+from base import errors
+from visualizer import vis_log_reg
 
 class LogisticRegression(object):
     """Multi-class Logistic Regression Class
@@ -66,25 +64,27 @@ class LogisticRegression(object):
                       which the labels lie
 
         """
-        # initialize with 0 the weights W as a matrix of shape (n_in, n_out)
-        self.W = theano.shared(
+        self.x = input
+        self.n_in = n_in
+        self.n_out = n_out
+
+        # initialize theta = (W,b) with 0s; W gets the shape (n_in, n_out),
+        # while b is a vector of n_out elements, making theta a vector of
+        # n_in*n_out + n_out elements
+        self.theta = theano.shared(
             value=numpy.zeros(
-                (n_in, n_out),
+                n_in * n_out + n_out,
                 dtype=theano.config.floatX
             ),
-            name='W',
+            name='theta',
             borrow=True
-        )
+        )        
+        
+        # initialize with 0 the weights W as a matrix of shape (n_in, n_out)
+        self.W = self.theta[0:n_in * n_out].reshape((n_in, n_out))
         
         # initialize the baises b as a vector of n_out 0s
-        self.b = theano.shared(
-            value=numpy.zeros(
-                (n_out,),
-                dtype=theano.config.floatX
-            ),
-            name='b',
-            borrow=True
-        )
+        self.b = self.theta[n_in * n_out:n_in * n_out + n_out]
 
         # symbolic expression for computing the matrix of class-membership
         # probabilities
@@ -94,7 +94,7 @@ class LogisticRegression(object):
         # x is a matrix where row-j  represents input training sample-j
         # b is a vector where element-k represent the free parameter of hyper
         # plain-k
-        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(input.reshape((1,n_in)),
+        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(self.x.reshape((1, n_in)),
                                                  self.W) + self.b))
 
         # symbolic description of how to compute prediction as class whose
@@ -107,6 +107,7 @@ class LogisticRegression(object):
         self.valid_error_array = []
         self.train_cost_array = []
         self.train_error_array = []
+        self.epoch = 0
         
     def print_log_reg_types(self):
         print(self.W.type(), 'W')
@@ -146,6 +147,13 @@ class LogisticRegression(object):
     def distribution(self):
         return self.p_y_given_x
         
+    def errors(self, y):
+        return errors(
+            predicted = self.y_pred,
+            actual = y,
+            not_shared = False
+        )
+        
 def zero_in_array(array):
     return [[0 for col in range(7)] for row in range(7)]
 
@@ -160,8 +168,8 @@ def train_log_reg(train_names,
                  base_folder,
                  train_algo = 'sgd',
                  window_size=1):
-    x = T.matrix('x')  # data, presented as window with x, y, x for each sample
-    classifier = LogisticRegression(input=x, n_in=window_size*3, n_out=7)
+    x = T.vector('x')
+    classifier = LogisticRegression(input=x, n_in=window_size, n_out=7)
     if (train_algo == 'sgd'):
         trained_classifier = train_logistic_sgd(
             read_algo = read_algo,
@@ -176,7 +184,27 @@ def train_log_reg(train_names,
             output_folder = output_folder,
             base_folder = base_folder
         )
-    #visualize log reg
+    else:
+        trained_classifier = train_logistic_cg(
+            read_algo = read_algo,
+            read_window = read_window,
+            read_rank = read_rank,
+            train_names = train_names,
+            valid_names = valid_names,
+            window_size = window_size,
+            n_epochs = n_epochs,
+            classifier = classifier
+        )
+        
+    vis_log_reg(
+        base_folder = base_folder,
+        output_folder = output_folder,
+        train_cost = classifier.train_cost_array,
+        train_error = classifier.train_error_array,
+        valid_error = classifier.valid_error_array,
+        window_size = window_size,
+        learning_rate = learning_rate
+    )
     
     return trained_classifier
     
@@ -189,7 +217,6 @@ def test_log_reg(test_names,
     test_reader = ICHISeqDataReader(test_names)
     
     index = T.lscalar()
-    x = T.matrix('x')
     y = T.iscalar('y')
     
     test_error_array = []    
@@ -207,7 +234,7 @@ def test_log_reg(test_names,
             inputs=[index],
             outputs=[classifier.errors(y), classifier.predict(), y],
             givens={
-                x: test_set_x[index: index + window_size],
+                classifier.x: test_set_x[index: index + window_size],
                 y: test_set_y[index + window_size - 1]
             }
         )
@@ -219,7 +246,7 @@ def test_log_reg(test_names,
                             
         test_error_array.append(test_score)
      
-     return test_error_array
+    return test_error_array
         
 def test_all_params():  
     train_names = ['p002','p003','p005','p08a','p08b','p09a','p09b',
@@ -230,18 +257,18 @@ def test_all_params():
                'p044','p045','p047','p048','p050','p051']
     valid_names = ['p017','p007','p012','p030','p037','p049']
 
-    read_window = 1
+    read_window = 20
     read_algo = 'avg'
-    read_rank = 10
+    read_rank = -5
     
     learning_rate = 0.0001
-    window_size = 50
+    window_size = 1
     
-    n_epochs = 15
+    n_epochs = 2
     train_algo = 'sgd'
 
     error_array = []
-    for test_pat in train_names:
+    for test_pat_num in xrange(len(train_names)):
         test_pat = train_names.pop(test_pat_num)
         output_folder=('all_data, [%s]')%(test_pat)
         trained_log_reg = train_log_reg(
@@ -266,7 +293,7 @@ def test_all_params():
             classifier = trained_log_reg,
             window_size = window_size
         )[0]
-        print ('error for patient %s is %f')%(test_pat, test_errors)
+        print ('error for patient %s is %f')%(test_pat, test_error)
         error_array.append(test_error)
         train_names.insert(test_pat_num,test_pat)
     

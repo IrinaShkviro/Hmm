@@ -12,7 +12,7 @@ import os
 import theano.tensor as T
 import matplotlib.pyplot as plt
 
-def errors(predicted, actual):
+def errors(predicted, actual, not_shared = True):
         """Return 1 if actual!=predicted (error) and 0 if right
 
         :type actual: theano.tensor.TensorType
@@ -20,8 +20,9 @@ def errors(predicted, actual):
                   correct label
         """
 
-        actual = theano.shared(actual)
-        predicted = theano.shared(predicted)
+        if not_shared:
+            actual = theano.shared(actual)
+            predicted = theano.shared(predicted)
         # check if y has same dimension of y_pred
         if actual.ndim != predicted.ndim:
             raise TypeError(

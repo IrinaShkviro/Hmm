@@ -30,9 +30,9 @@ def vis_log_reg(base_folder,
     os.chdir(output_folder)
     print('Set output')
                         
-    train_cost=numpy.asarray(train_cost).mean(axis = 0)
-    train_error=numpy.asarray(train_error).mean(axis = 0)
-    valid_error=numpy.asarray(valid_error).mean(axis = 0)
+    train_cost=numpy.asarray(train_cost)
+    train_error=numpy.asarray(train_error)
+    valid_error=numpy.asarray(valid_error)
     print('converted to arrays')
                 
     # print errors
