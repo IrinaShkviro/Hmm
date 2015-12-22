@@ -20,13 +20,14 @@ from hmm2 import update_params_on_patient, finish_training, get_error_on_patient
 from sda import pretrain_SdA
 #from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_reader import ICHISeqDataReader
-from cg import pretrain_sda_cg
-from sgd import pretrain_sda_sgd
+from cg import pretrain_sda_cg, finetune_sda_cg
+from sgd import pretrain_sda_sgd, finetune_sda_sgd
 from preprocess import filter_data, create_int_labels, create_av_disp, create_av
 
 theano.config.exception_verbosity='high'
 
 def train_SdA(train_names,
+              valid_names,
               read_window,
               read_algo,
               read_rank,
@@ -39,7 +40,10 @@ def train_SdA(train_names,
               output_folder,
               base_folder,              
               posttrain_rank,
-              posttrain_algo):
+              posttrain_algo,
+              finetune_algo,
+              finetune_lr,
+              training_epochs):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
     This is demonstrated on ICHI.
@@ -77,18 +81,6 @@ def train_SdA(train_names,
     
     end_time = timeit.default_timer()
         
-    '''
-    for i in xrange(sda.n_layers):
-        print(i, 'i pretrained')
-        visualize_pretraining(train_cost=pretrained_sda.dA_layers[i].train_cost_array,
-                              window_size=window_size,
-                              learning_rate=0,
-                              corruption_level=corruption_levels[i],
-                              n_hidden=sda.dA_layers[i].n_hidden,
-                              da_layer=i,
-                              datasets_folder=output_folder,
-                              base_folder=base_folder)
-    '''
     print >> sys.stderr, ('The pretraining code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
@@ -176,10 +168,36 @@ def train_SdA(train_names,
     gc.collect()
     print('MultinomialHMM created')
     
-    pretrained_sda.set_classifier(
-        classifier = hmm_model
+    pretrained_sda.set_hmm2(
+        hmm2 = hmm_model
     )
-    return pretrained_sda
+    
+    if finetune_algo == 'sgd':    
+        finetuned_sda = finetune_sda_sgd(
+            sda=pretrained_sda,
+            train_names = train_names,
+            valid_names = valid_names,
+            read_algo = read_algo,
+            read_window = read_window,
+            read_rank = read_rank,
+            window_size = window_size,
+            finetune_lr = finetune_lr,
+            training_epochs = training_epochs
+        )
+    else:        
+        finetuned_sda = pretrained_sda
+    
+    '''
+    visualize_finetuning(train_cost=finetuned_sda.logLayer.train_cost_array,
+                         train_error=finetuned_sda.logLayer.train_error_array,
+                         valid_error=finetuned_sda.logLayer.valid_error_array,
+                         test_error=finetuned_sda.logLayer.test_error_array,
+                         window_size=window_size,
+                         learning_rate=0,
+                         datasets_folder=output_folder,
+                         base_folder=base_folder)
+    '''
+    return finetuned_sda
     
 def test_sda(
     sda,
@@ -269,6 +287,8 @@ def test_all_params():
     posttrain_rank = 5    
     posttrain_algo = "avg"
     
+    finetune_algo = 'sgd'
+    
     output_folder=('all_train, %s')%(test_data)
 
     trained_sda = train_SdA(    
@@ -285,7 +305,8 @@ def test_all_params():
         output_folder = output_folder,
         base_folder = 'sda_hmm2', 
         posttrain_rank = posttrain_rank,
-        posttrain_algo = posttrain_algo              
+        posttrain_algo = posttrain_algo,
+        finetune_algo = finetune_algo              
     )
     
     error_array = test_sda(

@@ -21,6 +21,7 @@ from da import dA
 from visualizer import visualize_pretraining
 from cg import pretrain_sda_cg
 from sgd import pretrain_sda_sgd
+from log_reg import LogisticRegression
 
 theano.config.exception_verbosity='high'
 
@@ -144,8 +145,14 @@ class SdA(object):
             }
         )
         
-    def set_classifier(self, classifier):
-        self.classifier = classifier
+        self.logLayer = LogisticRegression(
+            input=self.sigmoid_layers[-1].output,
+            n_in=hidden_layers_sizes[-1],
+            n_out=n_outs
+        )
+        
+    def set_hmm2(self, hmm2):
+        self.hmm2 = hmm2
 
 def pretrain_SdA(train_names,
                  read_window,
