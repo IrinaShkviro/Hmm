@@ -20,7 +20,7 @@ from hmm2 import update_params_on_patient, finish_training, get_error_on_patient
 from sda import pretrain_SdA
 #from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_reader import ICHISeqDataReader
-from cg import pretrain_sda_cg, finetune_sda_cg
+#from cg import pretrain_sda_cg, finetune_sda_cg
 from sgd import pretrain_sda_sgd, finetune_sda_sgd
 from preprocess import filter_data, create_int_labels, create_av_disp, create_av
 
@@ -213,7 +213,11 @@ def test_sda(
     test_reader = ICHISeqDataReader(test_names)
     posttrain_window = sda.da_layers_output_size
     
-    error_array = []
+    index = T.lscalar()
+    
+    hmm_error_array = []
+    log_reg_errors = []
+    
     for test_patient in test_names:
         test_set_x, test_set_y = test_reader.read_next_doc(
             algo = read_algo,
@@ -251,11 +255,28 @@ def test_sda(
             all_labels = True
         )
         
-        error_array.append(patient_error)
-        print(patient_error, ' error for patient ' + test_patient)
+        test_model = theano.function(
+            inputs=[index],
+            outputs=[sda.logLayer.errors(sda.y), sda.logLayer.predict(), sda.y],
+            givens={
+                sda.x: test_set_x[index: index + window_size],
+                sda.y: test_set_y[index + window_size - 1]
+            }
+        )
+        
+        test_result = [test_model(i) for i in xrange(n_patient_samples)]
+        test_result = numpy.asarray(test_result)
+        test_losses = test_result[:,0]
+        test_score = float(numpy.mean(test_losses))*100
+                            
+        log_reg_errors.append(test_score)
+        
+        hmm_error_array.append(patient_error)
+        print(patient_error, ' error (hmm) for patient ' + test_patient)
+        print(test_score, ' error (log_reg) for patient ' + test_patient)
         gc.collect()
         
-    return error_array
+    return hmm_error_array, log_reg_errors
     
 def test_all_params():
     window_size = 30
@@ -265,14 +286,14 @@ def test_all_params():
                'p026','p027','p028','p029','p030','p031','p032','p033',
                'p034','p035','p036','p037','p038','p040','p042','p043',
                'p044','p045','p047','p048','p049','p050','p051']
-    without_train = ['p002','p003','p08a','p09a','p09b',
+    without_valid = ['p002','p003','p08a','p09a','p09b',
 			'p10a','p011','p012','p013','p014','p15a','p15b','p016',
                'p017','p018','p019','p020','p021','p022','p023','p025',
                'p026','p027','p029','p030','p031','p032','p033',
                'p034','p035','p036','p037','p038','p040','p042','p043',
                'p044','p045','p047','p048','p049','p050','p051']
-    train_data = ['p007', 'p028', 'p005', 'p08b']
-    test_data = without_train
+    valid_names = ['p007', 'p028', 'p005', 'p08b']
+    test_data = ['p002', 'p017', 'p014', 'p048']
     
     read_window = 20
     read_algo = "filter+avg"
@@ -280,7 +301,7 @@ def test_all_params():
     
     corruption_levels = [.1, .2]
     hidden_layers_sizes = [window_size/2, window_size/3]
-    pretraining_epochs = 20
+    pretraining_epochs = 1
     pretrain_lr=.03        
     pretrain_algo = "sgd"
     
@@ -288,11 +309,14 @@ def test_all_params():
     posttrain_algo = "avg"
     
     finetune_algo = 'sgd'
+    finetune_lr = 0.003
+    training_epochs = 1
     
     output_folder=('all_train, %s')%(test_data)
 
     trained_sda = train_SdA(    
-        train_names = train_data,
+        train_names = without_valid,
+        valid_names = valid_names,
         read_window = read_window,
         read_algo = read_algo,
         read_rank = read_rank,
@@ -306,10 +330,12 @@ def test_all_params():
         base_folder = 'sda_hmm2', 
         posttrain_rank = posttrain_rank,
         posttrain_algo = posttrain_algo,
-        finetune_algo = finetune_algo              
+        finetune_algo = finetune_algo,
+        finetune_lr = finetune_lr,
+        training_epochs = training_epochs
     )
     
-    error_array = test_sda(
+    hmm_errors, log_reg_errors = test_sda(
         sda = trained_sda,
         test_names = test_data,
         read_window = read_window,
@@ -321,10 +347,15 @@ def test_all_params():
         predict_algo = 'viterbi'
     )
     
-    print(error_array)             
-    print('mean value of error: ', numpy.round(numpy.mean(error_array), 6))
-    print('min value of error: ', numpy.round(numpy.amin(error_array), 6))
-    print('max value of error: ', numpy.round(numpy.amax(error_array), 6))
+    print(hmm_errors, 'hmm')
+    print(log_reg_errors, 'log_reg')
+    print('mean hmm value of error: ', numpy.round(numpy.mean(hmm_errors), 6))
+    print('min hmm value of error: ', numpy.round(numpy.amin(hmm_errors), 6))
+    print('max hmm value of error: ', numpy.round(numpy.amax(hmm_errors), 6))
+    
+    print('mean reg value of error: ', numpy.round(numpy.mean(log_reg_errors), 6))
+    print('min reg value of error: ', numpy.round(numpy.amin(log_reg_errors), 6))
+    print('max reg value of error: ', numpy.round(numpy.amax(log_reg_errors), 6))
     
     '''
     train_data = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
