@@ -13,6 +13,7 @@ import theano
 import theano.tensor as T
 
 from ichi_reader import ICHISeqDataReader
+from visualizer import visualize_finetuning
 
 def zero_in_array(array):
     return [[0 for col in range(7)] for row in range(7)]
@@ -306,8 +307,10 @@ def pretraining_functions_sda_sgd(sda, window_size):
     corruption_level = T.scalar('corruption')  # % of corruption to use
     learning_rate = T.scalar('lr')  # learning rate to use
     train_set = T.vector('train_set')
+    valid_set = T.vector('valid_set')
 
     pretrain_fns = []
+    valid_fns = []
     for cur_dA in sda.dA_layers:
         # get the cost and the updates list
         cost, updates = cur_dA.get_cost_updates(
@@ -329,26 +332,42 @@ def pretraining_functions_sda_sgd(sda, window_size):
                 sda.x: train_set[index: index + window_size]
             }
         )
+        
+        vf = theano.function(
+            inputs=[
+                index,
+                valid_set,
+                theano.Param(corruption_level, default=0.0)
+            ],
+            outputs=cost,
+            givens={
+                sda.x: valid_set[index: index + window_size]
+            }
+        )
+                
         # append `fn` to the list of functions
         pretrain_fns.append(fn)
+        valid_fns.append(vf)
 
-    return pretrain_fns
+    return pretrain_fns, valid_fns
     
 def pretrain_sda_sgd(
         sda,
         train_names,
+        valid_names,
         read_window,
         read_algo,
         read_rank,
         window_size,
-        pretraining_epochs,
         pretrain_lr,
-        corruption_levels):
+        corruption_levels,
+        global_epochs,
+        pat_epochs):
     # compute number of examples given in training set
     n_train_patients =  len(train_names)
     
     print '... getting the pretraining functions'
-    pretraining_fns = pretraining_functions_sda_sgd(sda=sda,
+    pretraining_fns, valid_fns = pretraining_functions_sda_sgd(sda=sda,
                                                     window_size=window_size)
 
     print '... pre-training the model'
@@ -356,29 +375,76 @@ def pretrain_sda_sgd(
     for i in xrange(sda.n_layers):
         cur_dA = sda.dA_layers[i]
         cur_dA.train_cost_array = []
-        cur_train_cost = []
-        train_reader = ICHISeqDataReader(train_names)
-        for patients in xrange(n_train_patients):
-            # go through the training set
-            train_set_x, train_set_y = train_reader.read_next_doc(
-                algo = read_algo,
-                window = read_window,
-                rank = read_rank
-            )
-            n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
-            cur_train_cost.append([])            
-            # go through pretraining epochs
-            for epoch in xrange(pretraining_epochs):
-                cur_epoch_cost=[]                               
-                for index in xrange(n_train_samples):
-                    cur_epoch_cost.append(pretraining_fns[i](index=index,
-                             train_set = train_set_x.get_value(borrow=True),
-                             corruption=corruption_levels[i],
-                             lr=pretrain_lr))
-                cur_train_cost[-1].append(numpy.mean(cur_epoch_cost))
-            gc.collect()
+        iter = 0
+        for global_epoch in xrange(global_epochs):
+            train_reader = ICHISeqDataReader(train_names)
+            for patients in xrange(n_train_patients):
+                # go through the training set
+                train_set_x, train_set_y = train_reader.read_next_doc(
+                    algo = read_algo,
+                    window = read_window,
+                    rank = read_rank
+                )
+                n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
+                
+                patience = n_train_samples*2  # look as this many examples regardless
+                validation_frequency = patience / 2 # go through this many
+                                          # minibatche before checking the network
+                                          # on the validation set; in this case we
+                                          # check every epoch
+                # go through pretraining epochs
+                for pat_epoch in xrange(pat_epochs):
+                    cur_epoch_cost=[]                               
+                    for index in xrange(n_train_samples):
+                        # iteration number
+                        big_epoch = (global_epoch*n_train_patients + patients)*pat_epochs + pat_epoch
+                        iter = iter + 1
+                    
+                        cur_epoch_cost.append(pretraining_fns[i](index=index,
+                                 train_set = train_set_x.get_value(borrow=True),
+                                 corruption=corruption_levels[i],
+                                 lr=pretrain_lr))
+                                 
+                        # test on valid set        
+                        if (iter + 1) % validation_frequency == 0:
+                            valid_reader = ICHISeqDataReader(valid_names)
+                            valid_array = []
+                            for valid_pat in xrange(len(valid_names)):
+                                valid_set_x, valid_set_y = valid_reader.read_next_doc(
+                                    algo = read_algo,
+                                    window = read_window,
+                                    rank = read_rank
+                                )
+                                n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1
+                                validation_losses = [
+                                    valid_fns[i](
+                                        index = index,
+                                        valid_set = valid_set_x.get_value(borrow=True)
+                                    ) for index in xrange(n_valid_samples)]
+                                this_validation_loss = float(numpy.mean(validation_losses))*100                 
+                                valid_array.append(this_validation_loss)
+                            valid_mean_error = numpy.mean(valid_array)                        
+                            cur_dA.valid_error_array.append([])
+                            cur_dA.valid_error_array[-1].append(
+                                big_epoch + float(index)/n_train_samples
+                            )
+                            cur_dA.valid_error_array[-1].append(valid_mean_error)
+                                        
+                            print(
+                                'epoch %i, iter %i/%i, validation error %f %%' %
+                                (
+                                    big_epoch,
+                                    index + 1,
+                                    n_train_samples,
+                                    valid_mean_error
+                                )
+                            )
+                    cur_dA.train_cost_array.append([])
+                    cur_dA.train_cost_array[-1].append(big_epoch)
+                    cur_dA.train_cost_array[-1].append(numpy.mean(cur_epoch_cost))
+                    
+                gc.collect()
             
-        cur_dA.train_cost_array = [[epoch, cost] for epoch, cost in zip(xrange(pretraining_epochs), numpy.mean(cur_train_cost, axis=0))]
     return sda
 
 def build_finetune_functions(
@@ -407,7 +473,7 @@ def build_finetune_functions(
     index = T.lscalar('index')  # index to a sample
 
     # compute the gradients with respect to the model parameters
-    gparams = T.grad(sda.finetune_cost, sda.params)
+    gparams = T.grad(sda.logLayer.negative_log_likelihood(sda.y), sda.params)
 
     # compute list of fine-tuning updates
     updates = [
@@ -427,8 +493,8 @@ def build_finetune_functions(
             train_set_y
         ],
         outputs=[sda.logLayer.negative_log_likelihood(sda.y),
-                 sda.logLayer.errors,
-                 sda.logLayer.predict,
+                 sda.logLayer.errors(sda.y),
+                 sda.logLayer.predict(),
                  sda.y],
         updates=updates,
         givens={
@@ -444,7 +510,7 @@ def build_finetune_functions(
             valid_set_x,
             valid_set_y
         ],
-        outputs=sda.logLayer.errors,
+        outputs=sda.logLayer.errors(sda.y),
         givens={
             sda.x: valid_set_x[index: index + window_size],
             sda.y: valid_set_y[index + window_size - 1]
@@ -452,17 +518,9 @@ def build_finetune_functions(
         name='valid'
     )
 
-    # Create a function that scans the entire validation set
-    def valid_score(valid_set_x, valid_set_y):
-        return [valid_score_i(
-                index = i,
-                valid_set_x = valid_set_x,
-                valid_set_y = valid_set_y
-            ) for i in xrange(train_set_x.shape[0])]
+    return train_fn, valid_score_i
 
-    return train_fn, valid_score
-
-def finetune_sda_sgd(
+def finetune_log_layer_sgd(
     sda,
     train_names,
     valid_names,
@@ -471,7 +529,9 @@ def finetune_sda_sgd(
     read_rank,
     window_size,
     finetune_lr,
-    training_epochs):
+    global_epochs,
+    pat_epochs,
+    output_folder):
     ########################
     # FINETUNING THE MODEL #
     ########################
@@ -490,8 +550,6 @@ def finetune_sda_sgd(
     )
     
     train_reader = ICHISeqDataReader(train_names)
-    valid_reader = ICHISeqDataReader(valid_names)
-
 
     print '... finetunning the model'
     # early-stopping parameters
@@ -500,97 +558,120 @@ def finetune_sda_sgd(
                                    # considered significant   
                                   
     best_iter = 0
+    best_valid = numpy.inf
     cur_train_cost =[]
     cur_train_error = []
     train_confusion_matrix = numpy.zeros((7, 7))
+    iter = 0
     
-    for pat_num in xrange(len(train_names)):
-        done_looping = False
-        # go through the training set
-        train_set_x, train_set_y = train_reader.read_next_doc(
-            algo = read_algo,
-            window = read_window,
-            rank = read_rank
-        )
-        n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
-         
-        valid_set_x, valid_set_y = valid_reader.read_next_doc(
-            algo = read_algo,
-            window = read_window,
-            rank = read_rank
-        )
-        
-        patience = n_train_samples*2  # look as this many examples regardless
-        validation_frequency = patience / 2 # go through this many
-                                  # minibatche before checking the network
-                                  # on the validation set; in this case we
-                                  # check every epoch
-        pat_epoch = 0
-
-        while (pat_epoch < training_epochs) and (not done_looping):
-            train_confusion_matrix = zero_in_array(train_confusion_matrix)
-            for index in xrange(n_train_samples):          
-                sample_cost, sample_error, cur_pred, cur_actual = train_fn(
-                    index = index,
-                    train_set_x = train_set_x,
-                    train_set_y = train_set_y
-                )
-                # iteration number
-                iter = pat_epoch * n_train_samples + index
-                    
-                cur_train_cost.append(sample_cost)
-                cur_train_error.append(sample_error)
-                train_confusion_matrix[cur_actual][cur_pred] += 1
+    for global_epoch in xrange(global_epochs):
+        for pat_num in xrange(len(train_names)):
+            done_looping = False
+            # go through the training set
+            train_set_x, train_set_y = train_reader.read_next_doc(
+                algo = read_algo,
+                window = read_window,
+                rank = read_rank
+            )
+            n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
+            
+            patience = n_train_samples*2  # look as this many examples regardless
+            validation_frequency = patience / 2 # go through this many
+                                      # minibatche before checking the network
+                                      # on the validation set; in this case we
+                                      # check every epoch
+            pat_epoch = 0
     
-                if (iter + 1) % validation_frequency == 0:
-                    validation_losses = validate_model(
-                        valid_set_x = valid_set_x,
-                        vaid_set_y = valid_set_y
-                    )
-                    this_validation_loss = float(numpy.mean(validation_losses))*100                 
-                    sda.logLayer.valid_error_array.append([])
-                    sda.logLayer.valid_error_array[-1].append(sda.logLayer.epoch + float(iter)/n_train_samples)
-                    sda.logLayer.valid_error_array[-1].append(this_validation_loss)
-                            
-                    print(
-                        'epoch %i, iter %i/%i, validation error %f %%' %
-                        (
-                            sda.logLayer.epoch,
-                            index + 1,
-                            n_train_samples,
-                            this_validation_loss
-                        )
+            while (pat_epoch < pat_epochs) and (not done_looping):
+                train_confusion_matrix = zero_in_array(train_confusion_matrix)
+                for index in xrange(n_train_samples):          
+                    sample_cost, sample_error, cur_pred, cur_actual = train_fn(
+                        index = index,
+                        train_set_x = train_set_x.get_value(borrow=True),
+                        train_set_y = train_set_y.eval()
                     )
                     
-                    # if we got the best validation score until now
-                    if this_validation_loss < sda.logLayer.validation_scores[0]:
-    
-                        #improve patience if loss improvement is good enough
-                        if this_validation_loss < sda.logLayer.validation_scores[0] * \
-                            improvement_threshold:
-                            patience = max(patience, iter * patience_increase)
-    
-                        best_iter = iter
-    
-                if patience*4 <= iter:
-                    done_looping = True
-                    print('Done looping')
-                    break
-                               
-            sda.logLayer.train_cost_array.append([])
-            sda.logLayer.train_cost_array[-1].append(sda.logLayer.epoch + float(iter)/n_train_samples)
-            sda.logLayer.train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
-            cur_train_cost =[]
-           
-            sda.logLayer.train_error_array.append([])
-            sda.logLayer.train_error_array[-1].append(sda.logLayer.epoch + float(iter)/n_train_samples)
-            sda.logLayer.train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
-            cur_train_error =[]
-                    
-            sda.logLayer.epoch = sda.logLayer.epoch + 1
-            pat_epoch = pat_epoch + 1
-            gc.collect()
+                    # iteration number
+                    iter = iter + 1
                         
-        print(train_confusion_matrix, 'train_confusion_matrix')
-        print(best_iter, 'best_iter')
+                    cur_train_cost.append(sample_cost)
+                    cur_train_error.append(sample_error)
+                    train_confusion_matrix[cur_actual][cur_pred] += 1
+        
+                    if (iter + 1) % validation_frequency == 0:
+                        valid_reader = ICHISeqDataReader(valid_names)
+                        valid_array = []
+                        for valid_pat in xrange(len(valid_names)):
+                            valid_set_x, valid_set_y = valid_reader.read_next_doc(
+                                algo = read_algo,
+                                window = read_window,
+                                rank = read_rank
+                            )
+                            n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1
+                            validation_losses = [
+                                validate_model(
+                                    index = i,
+                                    valid_set_x = valid_set_x.get_value(borrow=True),
+                                    valid_set_y = valid_set_y.eval()
+                                ) for i in xrange(n_valid_samples)
+                            ]
+                            this_validation_loss = float(numpy.mean(validation_losses))*100                 
+                            valid_array.append(this_validation_loss)
+                        valid_mean_error = numpy.mean(valid_array)                        
+                        sda.logLayer.valid_error_array.append([])
+                        sda.logLayer.valid_error_array[-1].append(sda.logLayer.epoch + float(index)/n_train_samples)
+                        sda.logLayer.valid_error_array[-1].append(valid_mean_error)
+                                    
+                        print(
+                            'epoch %i, iter %i/%i, validation error %f %%' %
+                            (
+                                sda.logLayer.epoch,
+                                iter + 1,
+                                n_train_samples,
+                                this_validation_loss
+                            )
+                        )
+                        
+                        # if we got the best validation score until now
+                        if valid_mean_error < best_valid:
+        
+                            #improve patience if loss improvement is good enough
+                            if this_validation_loss < best_valid * \
+                                improvement_threshold:
+                                patience = max(patience, iter * patience_increase)
+        
+                            best_iter = iter
+                            best_valid = valid_mean_error
+        
+                    if patience*4 <= iter:
+                        done_looping = True
+                        print('Done looping')
+                        break
+                                   
+                sda.logLayer.train_cost_array.append([])
+                sda.logLayer.train_cost_array[-1].append(sda.logLayer.epoch)
+                sda.logLayer.train_cost_array[-1].append(numpy.mean(cur_train_cost))
+                cur_train_cost =[]
+               
+                sda.logLayer.train_error_array.append([])
+                sda.logLayer.train_error_array[-1].append(sda.logLayer.epoch)
+                sda.logLayer.train_error_array[-1].append(numpy.mean(cur_train_error)*100)
+                cur_train_error =[]
+                        
+                sda.logLayer.epoch = sda.logLayer.epoch + 1
+                pat_epoch = pat_epoch + 1
+                gc.collect()
+                            
+            print(train_confusion_matrix, 'train_confusion_matrix')
+            print(best_iter, 'best_iter')
+    visualize_finetuning(
+        train_cost=sda.logLayer.train_cost_array,
+        train_error=sda.logLayer.train_error_array,
+        valid_error=sda.logLayer.valid_error_array,
+        window_size=window_size,
+        learning_rate=0,
+        datasets_folder=output_folder,
+        base_folder='finetune_log_reg'
+    )
+
     return sda
