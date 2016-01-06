@@ -173,6 +173,7 @@ class dA(object):
         self.params = [self.theta, self.b_prime]
         
         self.train_cost_array=[]
+        self.valid_error_array = []
         self.epoch=0
 
     def get_corrupted_input(self, input, corruption_level):
