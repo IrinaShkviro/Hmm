@@ -16,86 +16,32 @@ from sklearn import hmm
 import theano
 import theano.tensor as T
 
+from hmm1 import GeneralHMM, mean_error
 from hmm2 import update_params_on_patient, finish_training, get_error_on_patient
 from sda import pretrain_SdA
-#from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_reader import ICHISeqDataReader
 #from cg import pretrain_sda_cg, finetune_sda_cg
-from sgd import pretrain_sda_sgd, finetune_sda_sgd
+from sgd import finetune_log_layer_sgd
 from preprocess import filter_data, create_int_labels, create_av_disp, create_av
 
 theano.config.exception_verbosity='high'
 
-def train_SdA(train_names,
-              valid_names,
-              read_window,
-              read_algo,
-              read_rank,
-              window_size,
-              corruption_levels,
-              hidden_layers_sizes,
-              pretraining_epochs,
-              pretrain_lr,
-              pretrain_algo,
-              output_folder,
-              base_folder,              
-              posttrain_rank,
-              posttrain_algo,
-              finetune_algo,
-              finetune_lr,
-              training_epochs):
-    """
-    Demonstrates how to train and test a stochastic denoising autoencoder.
-    This is demonstrated on ICHI.
-    :type pretraining_epochs: int
-    :param pretraining_epochs: number of epoch to do pretraining
-    :type n_iter: int
-    :param n_iter: maximal number of iterations ot run the optimizer
-    :type datasets: array
-    :param datasets: [train_set, valid_set, test_set]
-    
-    :type output_folder: string
-    :param output_folder: folder for costand error graphics with results
-    """    
- 
-    #########################
-    # PRETRAINING THE MODEL #
-    #########################
- 
-    start_time = timeit.default_timer()
-       
-    pretrained_sda = pretrain_SdA(
-        train_names = train_names,
-        read_window = read_window,
-        read_algo = read_algo,
-        read_rank = read_rank,
-        window_size = window_size,
-        corruption_levels = corruption_levels,
-        pretraining_epochs = pretraining_epochs,
-        pretrain_lr = pretraining_epochs,        
-        pretrain_algo = pretrain_algo,
-        hidden_layers_sizes = hidden_layers_sizes,
-        output_folder = output_folder,
-        base_folder = base_folder       
-    )
-    
-    end_time = timeit.default_timer()
-        
-    print >> sys.stderr, ('The pretraining code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
-
-    ########################
-    # FINETUNING THE MODEL #
-    ########################
-
+def finetune_hmm2(sda,
+                  read_window,
+                  read_algo,
+                  read_rank,
+                  posttrain_rank,
+                  posttrain_algo,
+                  window_size,
+                  train_names):
+                     
     n_train_patients=len(train_names)
     
     n_visible = pow(10, posttrain_rank) + 2 - read_window #input of sda
     n_visible = n_visible - window_size + 1 #output of sda
     n_hidden = 7
     
-    posttrain_window = pretrained_sda.da_layers_output_size
+    posttrain_window = sda.da_layers_output_size
         
     train_reader = ICHISeqDataReader(train_names)
     
@@ -120,7 +66,7 @@ def train_SdA(train_names,
         n_train_times = train_set_x.shape[0] - window_size + 1
         
         train_visible_after_sda = numpy.array(
-            [pretrained_sda.get_da_output(
+            [sda.get_da_output(
                 train_set_x[time: time + window_size]
             ).ravel()
             for time in xrange(n_train_times)]
@@ -168,13 +114,210 @@ def train_SdA(train_names,
     gc.collect()
     print('MultinomialHMM created')
     
-    pretrained_sda.set_hmm2(
+    sda.set_hmm2(
         hmm2 = hmm_model
     )
     
+    return sda
+    
+def validate_model(sda,
+                   valid_names,
+                   read_window,
+                   read_algo,
+                   read_rank,
+                   window_size):
+                       
+    valid_reader = ICHISeqDataReader(valid_names)
+    valid_errors = []
+    for i in xrange (len(valid_names)):
+        valid_x, valid_y = valid_reader.read_next_doc(
+            algo = read_algo,
+            rank = read_rank,
+            window = read_window,
+            divide = False
+        )
+        valid_x = valid_x.get_value()
+        valid_y = valid_y.eval()
+        
+        n_valid_times = valid_x.shape[0] - window_size + 1
+                    
+        new_valid_x = numpy.array(
+            [sda.get_da_output(
+                    valid_x[time: time + window_size]
+                ).ravel()
+            for time in xrange(n_valid_times)]
+        )
+
+        half_window_size = int(window_size/2)
+        new_valid_y = valid_y[
+            half_window_size: n_valid_times + half_window_size
+        ]
+
+        #compute mean error value for patients in validation set
+        pat_error = mean_error(
+            gen_hmm = sda.hmm1,
+            obs_seq = new_valid_x,
+            actual_states = new_valid_y
+        )
+        valid_errors.append(pat_error)
+    return numpy.mean(valid_errors)
+    
+def finetune_hmm1(sda,
+                  n_hiddens,
+                  n_hmms,
+                  train_names,
+                  valid_names,
+                  global_epochs,
+                  read_rank,
+                  read_window,
+                  read_algo,
+                  window_size,
+                  posttrain_algo,
+                  posttrain_rank,
+                  posttrain_window):
+                      
+    # set hmm1 layer on sda
+    sda.set_hmm1(
+        hmm1 = GeneralHMM(
+            n_hiddens = n_hiddens,
+            n_hmms = n_hmms
+        )        
+    )
+    
+    for epoch in xrange(global_epochs):
+        train_reader = ICHISeqDataReader(train_names)
+        n_train_patients = len(train_names)
+        
+        #train hmms on data of each patient
+        for train_patient in xrange(n_train_patients):
+            #get data divided on sequences with respect to labels
+            train_set = train_reader.read_next_doc(
+                algo = read_algo,
+                rank = read_rank,
+                window = read_window,
+                divide = True
+            )
+            for label in xrange(n_hmms):
+                set_for_label = set(train_set[label].eval())
+                if set_for_label != []:
+                    n_train_times = len(set_for_label) - window_size + 1
+                    
+                    train_after_sda = numpy.array(
+                        [sda.get_da_output(
+                            set_for_label[time: time + window_size]
+                        ).ravel()
+                        for time in xrange(n_train_times)]
+                    )
+                    
+                    if train_after_sda != []:
+                        sda.hmm1.hmm_models[label].fit(
+                            [numpy.array(train_after_sda).reshape((-1, 1))]
+                        )
+                            
+            error_cur_epoch = validate_model(
+                sda = sda,
+                valid_names = valid_names,
+                read_window = read_window,
+                read_algo = read_algo,
+                read_rank = read_rank,
+                window_size = window_size
+            )
+            sda.hmm1.valid_error_array.append([])
+            sda.hmm1.valid_error_array[-1].append(
+                epoch*n_train_patients + train_patient
+            )
+            sda.hmm1.valid_error_array[-1].append(error_cur_epoch)
+                
+            gc.collect()
+            
+    return sda
+
+def train_SdA(train_names,
+              valid_names,
+              read_window,
+              read_algo,
+              read_rank,
+              window_size,
+              corruption_levels,
+              hidden_layers_sizes,
+              pretraining_epochs,
+              pretraining_pat_epochs,
+              pretrain_lr,
+              pretrain_algo,
+              output_folder,
+              base_folder,              
+              posttrain_rank,
+              posttrain_algo,
+              posttrain_window,
+              finetune_algo,
+              finetune_lr,
+              global_epochs,
+              pat_epochs):
+    """
+    Demonstrates how to train and test a stochastic denoising autoencoder.
+    This is demonstrated on ICHI.
+    :type pretraining_epochs: int
+    :param pretraining_epochs: number of epoch to do pretraining
+    :type n_iter: int
+    :param n_iter: maximal number of iterations ot run the optimizer
+    :type datasets: array
+    :param datasets: [train_set, valid_set, test_set]
+    
+    :type output_folder: string
+    :param output_folder: folder for costand error graphics with results
+    """    
+ 
+    #########################
+    # PRETRAINING THE MODEL #
+    #########################
+ 
+    start_time = timeit.default_timer()
+       
+    pretrained_sda = pretrain_SdA(
+        train_names = train_names,
+        valid_names = valid_names,
+        read_window = read_window,
+        read_algo = read_algo,
+        read_rank = read_rank,
+        window_size = window_size,
+        corruption_levels = corruption_levels,
+        pretraining_epochs = pretraining_epochs,
+        pretraining_pat_epochs = pretraining_pat_epochs,
+        pretrain_lr = pretraining_epochs,        
+        pretrain_algo = pretrain_algo,
+        hidden_layers_sizes = hidden_layers_sizes,
+        output_folder = output_folder,
+        base_folder = base_folder       
+    )
+    
+    end_time = timeit.default_timer()
+        
+    print >> sys.stderr, ('The pretraining code for file ' +
+                          os.path.split(__file__)[1] +
+                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
+
+    ########################
+    # FINETUNING THE MODEL #
+    ########################
+
+    finetuned_sda_log_reg = pretrained_sda
+    '''
+    # calculate hmm2 layer
+    finetuned_sda_hmm2 = finetune_hmm2(
+        sda = pretrained_sda,
+        read_window = read_window,
+        read_algo = read_algo,
+        read_rank = read_rank,
+        posttrain_rank = posttrain_rank,
+        posttrain_algo = posttrain_algo,
+        window_size = window_size,
+        train_names = train_names
+    )
+    
+    # train logistic regression layer
     if finetune_algo == 'sgd':    
-        finetuned_sda = finetune_sda_sgd(
-            sda=pretrained_sda,
+        finetuned_sda_log_reg = finetune_log_layer_sgd(
+            sda = finetuned_sda_hmm2,
             train_names = train_names,
             valid_names = valid_names,
             read_algo = read_algo,
@@ -182,10 +325,32 @@ def train_SdA(train_names,
             read_rank = read_rank,
             window_size = window_size,
             finetune_lr = finetune_lr,
-            training_epochs = training_epochs
+            global_epochs = global_epochs,
+            pat_epochs = pat_epochs,
+            output_folder = output_folder
         )
     else:        
-        finetuned_sda = pretrained_sda
+        finetuned_sda_log_reg = pretrained_sda
+    '''
+    # train hmm1 layer
+    hmms_count = 7
+    n_hiddens = [5]*hmms_count
+    
+    finetuned_sda_hmm1 = finetune_hmm1(
+        sda = finetuned_sda_log_reg,
+        n_hiddens = n_hiddens,
+        n_hmms = hmms_count,
+        train_names = train_names,
+        valid_names = valid_names,
+        global_epochs = global_epochs,
+        read_rank = read_rank,
+        read_window = read_window,
+        read_algo = read_algo,
+        window_size = window_size,
+        posttrain_algo = posttrain_algo,
+        posttrain_rank = posttrain_rank,
+        posttrain_window = posttrain_window
+    )
     
     '''
     visualize_finetuning(train_cost=finetuned_sda.logLayer.train_cost_array,
@@ -197,7 +362,7 @@ def train_SdA(train_names,
                          datasets_folder=output_folder,
                          base_folder=base_folder)
     '''
-    return finetuned_sda
+    return finetuned_sda_hmm1
     
 def test_sda(
     sda,
@@ -213,10 +378,27 @@ def test_sda(
     test_reader = ICHISeqDataReader(test_names)
     posttrain_window = sda.da_layers_output_size
     
-    index = T.lscalar()
+    index = T.lscalar('index')
+    test_set_x = T.vector('test_set_x')
+    test_set_y = T.ivector('test_set_y')
+    y = T.iscalar('y')  # labels, presented as int label
     
-    hmm_error_array = []
+    hmm1_error_array = []
+    hmm2_error_array = []
     log_reg_errors = []
+    
+    test_log_reg = theano.function(
+        inputs=[
+            index,
+            test_set_x,
+            test_set_y
+        ],
+        outputs=[sda.logLayer.errors(y), sda.logLayer.predict(), y],
+        givens={
+            sda.x: test_set_x[index: index + window_size],
+            y: test_set_y[index + window_size - 1]
+        }
+    )    
     
     for test_patient in test_names:
         test_set_x, test_set_y = test_reader.read_next_doc(
@@ -224,9 +406,23 @@ def test_sda(
             window = read_window,
             rank = read_rank
         )
-        test_set_x = test_set_x.get_value()
+                        
+        test_set_x = test_set_x.get_value(borrow=True)
         test_set_y = test_set_y.eval()
+        
         n_test_times = test_set_x.shape[0] - window_size + 1
+        
+        test_result = [test_log_reg(
+            index = i,
+            test_set_x = test_set_x,
+            test_set_y = test_set_y) for i in xrange(n_test_times)
+        ]
+        test_result = numpy.asarray(test_result)
+        test_losses = test_result[:,0]
+        test_score = float(numpy.mean(test_losses))*100
+                            
+        log_reg_errors.append(test_score)
+        
         
         test_visible_after_sda = numpy.array(
             [sda.get_da_output(
@@ -234,6 +430,20 @@ def test_sda(
             ).ravel()
             for time in xrange(n_test_times)]
         )
+        
+        half_window_size = int(window_size/2)
+        test_y_after_sda = test_set_y[
+            half_window_size : n_test_times + half_window_size
+        ]
+        
+        #compute mean error value for patients in validation set hmm1
+        pat_error = mean_error(
+            gen_hmm = sda.hmm1,
+            obs_seq = test_visible_after_sda,
+            actual_states = test_y_after_sda
+        )
+        hmm1_error_array.append(pat_error)
+        
                     
         new_test_visible = create_labels_after_das(
             da_output_matrix = test_visible_after_sda,
@@ -243,7 +453,6 @@ def test_sda(
         )
         
         n_patient_samples = len(new_test_visible)
-        half_window_size = int(window_size/2)
         new_test_hidden = test_set_y[half_window_size:n_patient_samples+half_window_size]
         
         patient_error = get_error_on_patient(
@@ -255,28 +464,12 @@ def test_sda(
             all_labels = True
         )
         
-        test_model = theano.function(
-            inputs=[index],
-            outputs=[sda.logLayer.errors(sda.y), sda.logLayer.predict(), sda.y],
-            givens={
-                sda.x: test_set_x[index: index + window_size],
-                sda.y: test_set_y[index + window_size - 1]
-            }
-        )
-        
-        test_result = [test_model(i) for i in xrange(n_patient_samples)]
-        test_result = numpy.asarray(test_result)
-        test_losses = test_result[:,0]
-        test_score = float(numpy.mean(test_losses))*100
-                            
-        log_reg_errors.append(test_score)
-        
-        hmm_error_array.append(patient_error)
+        hmm2_error_array.append(patient_error)
         print(patient_error, ' error (hmm) for patient ' + test_patient)
         print(test_score, ' error (log_reg) for patient ' + test_patient)
         gc.collect()
         
-    return hmm_error_array, log_reg_errors
+    return hmm1_error_array, hmm2_error_array, log_reg_errors
     
 def test_all_params():
     window_size = 30
@@ -302,20 +495,24 @@ def test_all_params():
     corruption_levels = [.1, .2]
     hidden_layers_sizes = [window_size/2, window_size/3]
     pretraining_epochs = 1
+    pretraining_pat_epochs = 1
     pretrain_lr=.03        
     pretrain_algo = "sgd"
     
     posttrain_rank = 5    
     posttrain_algo = "avg"
+    posttrain_window = 1
     
     finetune_algo = 'sgd'
     finetune_lr = 0.003
-    training_epochs = 1
+    
+    global_epochs = 1
+    pat_epochs = 1
     
     output_folder=('all_train, %s')%(test_data)
 
     trained_sda = train_SdA(    
-        train_names = without_valid,
+        train_names = ['p002'],
         valid_names = valid_names,
         read_window = read_window,
         read_algo = read_algo,
@@ -326,16 +523,19 @@ def test_all_params():
         pretraining_epochs = pretraining_epochs,
         pretrain_lr = pretrain_lr,
         pretrain_algo = pretrain_algo,
+        pretraining_pat_epochs = pretraining_pat_epochs,
         output_folder = output_folder,
         base_folder = 'sda_hmm2', 
         posttrain_rank = posttrain_rank,
         posttrain_algo = posttrain_algo,
+        posttrain_window = posttrain_window,
         finetune_algo = finetune_algo,
         finetune_lr = finetune_lr,
-        training_epochs = training_epochs
+        global_epochs = global_epochs,
+        pat_epochs = pat_epochs
     )
     
-    hmm_errors, log_reg_errors = test_sda(
+    hmm1_errors, hmm2_errors, log_reg_errors = test_sda(
         sda = trained_sda,
         test_names = test_data,
         read_window = read_window,
@@ -347,12 +547,17 @@ def test_all_params():
         predict_algo = 'viterbi'
     )
     
-    print(hmm_errors, 'hmm')
-    print(log_reg_errors, 'log_reg')
-    print('mean hmm value of error: ', numpy.round(numpy.mean(hmm_errors), 6))
-    print('min hmm value of error: ', numpy.round(numpy.amin(hmm_errors), 6))
-    print('max hmm value of error: ', numpy.round(numpy.amax(hmm_errors), 6))
+    print(hmm1_errors, 'hmm')
+    print('mean hmm value of error: ', numpy.round(numpy.mean(hmm1_errors), 6))
+    print('min hmm value of error: ', numpy.round(numpy.amin(hmm1_errors), 6))
+    print('max hmm value of error: ', numpy.round(numpy.amax(hmm1_errors), 6))
     
+    print(hmm2_errors, 'hmm')
+    print('mean hmm value of error: ', numpy.round(numpy.mean(hmm2_errors), 6))
+    print('min hmm value of error: ', numpy.round(numpy.amin(hmm2_errors), 6))
+    print('max hmm value of error: ', numpy.round(numpy.amax(hmm2_errors), 6))
+    
+    print(log_reg_errors, 'log_reg')
     print('mean reg value of error: ', numpy.round(numpy.mean(log_reg_errors), 6))
     print('min reg value of error: ', numpy.round(numpy.amin(log_reg_errors), 6))
     print('max reg value of error: ', numpy.round(numpy.amax(log_reg_errors), 6))
