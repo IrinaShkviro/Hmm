@@ -41,6 +41,9 @@ class GeneralHMM(object):
         n_hiddens,
         n_hmms=7
     ):
+        """
+        n_hiddens = [n_components for 1st hmm, n_components for 2nd hmm, ...]
+        """
         #create hmm models for each label
         self.n_hmms = n_hmms
         self.hmm_models = []
@@ -51,7 +54,8 @@ class GeneralHMM(object):
         self.valid_error_array=[]
             
     def train(self,
-              train_names, valid_names,
+              train_names,
+              valid_names,
               read_window,
               read_algo,
               read_rank,
@@ -95,30 +99,23 @@ class GeneralHMM(object):
                        read_rank
                        ):
         valid_reader = ICHISeqDataReader(valid_names)
-        all_valid_x = []
-        all_valid_y = []
+        valid_errors = []
         for i in xrange (len(valid_names)):
-            valid_x = valid_reader.read_next_doc(
+            valid_x, valid_y = valid_reader.read_next_doc(
                 algo = read_algo,
                 rank = read_rank,
                 window = read_window,
-                divide = True
+                divide = False
             )
-            for label in xrange(self.n_hmms):
-                d_x = valid_x[label].eval()
-                all_valid_x = numpy.concatenate(
-                    (all_valid_x, d_x)
-                )
-                all_valid_y = numpy.concatenate(
-                    (all_valid_y, [label]*len(d_x))
-                )
-        #compute mean error value for patients in validation set
-        error = mean_error(
-            gen_hmm = self,
-            obs_seq = all_valid_x,
-            actual_states = all_valid_y
-        )
-        return error
+
+            #compute mean error value for patients in validation set
+            pat_error = mean_error(
+                gen_hmm = self,
+                obs_seq = valid_x,
+                actual_states = valid_y
+            )
+            valid_errors.append(pat_error)
+        return numpy.mean(valid_errors)
             
     #compute label for one observation (with respect to window size)
     def define_label(self, obs):
@@ -150,32 +147,21 @@ def test_hmm(
     n_test_patients = len(test_names)
     
     error_array = []
-    all_x = []
-    all_y = []
-
+    
     for i in xrange(n_test_patients):
         #get data divided on sequences with respect to labels
-        test_x = test_reader.read_next_doc(
+        test_x, test_y = test_reader.read_next_doc(
             algo = read_algo,
             rank = read_rank,
             window = read_window,
-            divide = True
+            divide = False
         )
-        
-        for label in xrange(gen_hmm.n_hmms):
-            d_x = test_x[label].eval()
-            all_x = numpy.concatenate(
-                (all_x, d_x)
-            )
-            all_y = numpy.concatenate(
-                (all_y, [label]*len(d_x))
-            )
         
         #compute mean error value for one patient in test set
         patient_error = mean_error(
             gen_hmm = gen_hmm,
-            obs_seq = all_x,
-            actual_states = all_y
+            obs_seq = test_x,
+            actual_states = test_y
         )
         
         error_array.append(patient_error)
