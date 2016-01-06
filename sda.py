@@ -150,21 +150,27 @@ class SdA(object):
             n_in=hidden_layers_sizes[-1],
             n_out=n_outs
         )
-        
+                
     def set_hmm2(self, hmm2):
         self.hmm2 = hmm2
-
+        
+    def set_hmm1(self, hmm1):
+        self.hmm1 = hmm1
+        
 def pretrain_SdA(train_names,
+                 valid_names,
                  read_window,
                  read_algo,
                  read_rank,                 
                  window_size,
                  corruption_levels,
                  pretraining_epochs,
+                 pretraining_pat_epochs,
                  pretrain_lr,
                  pretrain_algo,
                  hidden_layers_sizes,
-                 output_folder, base_folder):
+                 output_folder,
+                 base_folder):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
     This is demonstrated on ICHI.
@@ -200,15 +206,17 @@ def pretrain_SdA(train_names,
     
     if (pretrain_algo == "sgd"):
         pretrained_sda = pretrain_sda_sgd(
-            sda=sda,
-            train_names=train_names,
+            sda = sda,
+            train_names = train_names,
+            valid_names = valid_names,
             read_window = read_window,
             read_algo = read_algo,
             read_rank = read_rank,
-            window_size=window_size,
-            pretraining_epochs=pretraining_epochs,
-            pretrain_lr=pretrain_lr,
-            corruption_levels=corruption_levels
+            window_size = window_size,
+            global_epochs = pretraining_epochs,
+            pat_epochs = pretraining_pat_epochs,
+            pretrain_lr = pretrain_lr,
+            corruption_levels = corruption_levels
         )
     else:
         pretrained_sda = pretrain_sda_cg(
@@ -225,14 +233,17 @@ def pretrain_SdA(train_names,
     
     for i in xrange(sda.n_layers):
         print(i, 'i pretrained')
-        visualize_pretraining(train_cost=pretrained_sda.dA_layers[i].train_cost_array,
-                              window_size=window_size,
-                              learning_rate=pretrain_lr,
-                              corruption_level=corruption_levels[i],
-                              n_hidden=sda.dA_layers[i].n_hidden,
-                              da_layer=i,
-                              datasets_folder=output_folder,
-                              base_folder=base_folder)
+        visualize_pretraining(
+            train_cost = pretrained_sda.dA_layers[i].train_cost_array,
+            valid_error = pretrained_sda.dA_layers[i].valid_error_array,
+            window_size = window_size,
+            learning_rate = pretrain_lr,
+            corruption_level = corruption_levels[i],
+            n_hidden = sda.dA_layers[i].n_hidden,
+            da_layer = i,
+            datasets_folder = output_folder,
+            base_folder = base_folder
+        )
     
     print >> sys.stderr, ('The pretraining code for file ' +
                           os.path.split(__file__)[1] +
