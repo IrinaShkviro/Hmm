@@ -75,8 +75,15 @@ def vis_log_reg(base_folder,
     os.chdir('../')
     os.chdir('../')
 
-def visualize_pretraining(train_cost, window_size, learning_rate, corruption_level,
-                          n_hidden, da_layer, datasets_folder, base_folder):
+def visualize_pretraining(train_cost,
+                          valid_error,
+                          window_size,
+                          learning_rate,
+                          corruption_level,
+                          n_hidden,
+                          da_layer,
+                          datasets_folder,
+                          base_folder):
         print "Visualizer visualize_sda_costs"
                     
         if not os.path.isdir(base_folder):
@@ -94,11 +101,13 @@ def visualize_pretraining(train_cost, window_size, learning_rate, corruption_lev
         os.chdir(example_folder)
                         
         train_cost=numpy.asarray(train_cost)
+        valid_error=numpy.asarray(valid_error)
         print('converted to array')      
         
         # print errors
         plt.figure(1)
         plt.plot(train_cost[:, 0],train_cost[:,1],label='train_cost')
+        plt.plot(valid_error[:, 0],valid_error[:,1],label='valid_error')
         print('plot created, start decor')
         
         # decorative part       
@@ -129,7 +138,7 @@ def visualize_pretraining(train_cost, window_size, learning_rate, corruption_lev
         os.chdir('../')
         os.chdir('../')
         
-def visualize_finetuning(train_cost, train_error, valid_error, test_error, 
+def visualize_finetuning(train_cost, train_error, valid_error, 
                     window_size, learning_rate, datasets_folder, base_folder):
         print "Visualizer visualize finetuning costs"
                
@@ -150,14 +159,12 @@ def visualize_finetuning(train_cost, train_error, valid_error, test_error,
         train_cost=numpy.asarray(train_cost)
         train_error=numpy.asarray(train_error)
         valid_error=numpy.asarray(valid_error)
-        test_error=numpy.asarray(test_error)
         print('converted to arrays')
                 
         # print errors
         plt.figure(1)
         plt.plot(train_error[:, 0],train_error[:,1],label='train_error')
         plt.plot(valid_error[:, 0],valid_error[:,1],label='valid_error')
-        plt.plot(test_error[:, 0],test_error[:,1],label='test_error')
         print('plots created, start decor')        
         
         # decorative part       
