@@ -34,7 +34,7 @@ def filter_data(sequence):
     
     # First, design the Buterworth filter
     N  = 3   # Filter order
-    Wn = 0.3 # Cutoff frequency
+    Wn = 0.25 # Cutoff frequency
     B, A = signal.butter(N, Wn, output='ba')
     
     sequence = normalize_sequence_1_1(sequence)
