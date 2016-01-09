@@ -449,11 +449,6 @@ def pretrain_sda_sgd(
 
 def build_finetune_functions(
         sda,
-        train_names,
-        valid_names,
-        read_algo,
-        read_window,
-        read_rank,
         window_size,
         learning_rate):
     '''Generates a function `train` that implements one step of
@@ -540,11 +535,6 @@ def finetune_log_layer_sgd(
     print '... getting the finetuning functions'
     train_fn, validate_model = build_finetune_functions(
         sda=sda,
-        train_names=train_names,
-        valid_names = valid_names,
-        read_algo = read_algo,
-        read_window = read_window,
-        read_rank = read_rank,
         window_size=window_size,
         learning_rate=finetune_lr
     )

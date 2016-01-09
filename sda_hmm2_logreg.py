@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
 """
+Created on Thu Jan 07 13:01:26 2016
+
+@author: Serg
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Tue Nov 10 08:21:30 2015
 
 @author: irka
@@ -104,13 +111,13 @@ def finetune_hmm2(sda,
     )
     
     hmm_model = hmm.MultinomialHMM(
-        n_components=n_hidden,
-        startprob=pi_values,
-        transmat=a_values
+        n_components=n_hidden
     )
     
-    hmm_model.n_symbols=n_visible
-    hmm_model.emissionprob_=b_values 
+    hmm_model.startprob_ = pi_values
+    hmm_model.transmat_ = a_values
+    hmm_model.n_symbols = n_visible
+    hmm_model.emissionprob_ = b_values 
     gc.collect()
     print('MultinomialHMM created')
     
@@ -163,7 +170,7 @@ def validate_model(sda,
     return numpy.mean(valid_errors)
     
 def finetune_hmm1(sda,
-                  n_hiddens,
+                  n_components,
                   n_hmms,
                   train_names,
                   valid_names,
@@ -179,7 +186,7 @@ def finetune_hmm1(sda,
     # set hmm1 layer on sda
     sda.set_hmm1(
         hmm1 = GeneralHMM(
-            n_hiddens = n_hiddens,
+            n_components = n_components,
             n_hmms = n_hmms
         )        
     )
@@ -198,21 +205,22 @@ def finetune_hmm1(sda,
                 divide = True
             )
             for label in xrange(n_hmms):
-                set_for_label = set(train_set[label].eval())
-                if set_for_label != []:
-                    n_train_times = len(set_for_label) - window_size + 1
+                train_for_label = train_set[label].eval()
+                if train_for_label != []:
+                    n_train_times = train_for_label.shape[0] - window_size + 1
                     
                     train_after_sda = numpy.array(
                         [sda.get_da_output(
-                            set_for_label[time: time + window_size]
+                            train_for_label[time: time + window_size]
                         ).ravel()
                         for time in xrange(n_train_times)]
                     )
                     
-                    if train_after_sda != []:
+                    if train_after_sda.shape[0] > sda.hmm1.hmm_models[label].n_components:
                         sda.hmm1.hmm_models[label].fit(
-                            [numpy.array(train_after_sda).reshape((-1, 1))]
+                            train_after_sda.reshape((-1, 1))
                         )
+                        sda.hmm1.isFitted[label] = True
                             
             error_cur_epoch = validate_model(
                 sda = sda,
@@ -300,47 +308,13 @@ def train_SdA(train_names,
     # FINETUNING THE MODEL #
     ########################
 
-    finetuned_sda_log_reg = pretrained_sda
-    
-    # calculate hmm2 layer
-    finetuned_sda_hmm2 = finetune_hmm2(
-        sda = pretrained_sda,
-        read_window = read_window,
-        read_algo = read_algo,
-        read_rank = read_rank,
-        posttrain_rank = posttrain_rank,
-        posttrain_algo = posttrain_algo,
-        window_size = window_size,
-        train_names = train_names
-    )
-    
-    # train logistic regression layer
-    if finetune_algo == 'sgd':    
-        finetuned_sda_log_reg = finetune_log_layer_sgd(
-            sda = finetuned_sda_hmm2,
-            train_names = train_names,
-            valid_names = valid_names,
-            read_algo = read_algo,
-            read_window = read_window,
-            read_rank = read_rank,
-            window_size = window_size,
-            finetune_lr = finetune_lr,
-            global_epochs = global_epochs,
-            pat_epochs = pat_epochs,
-            output_folder = output_folder
-        )
-    else:        
-        finetuned_sda_log_reg = pretrained_sda
-        
-    finetuned_sda = finetuned_sda_log_reg
-    '''
     # train hmm1 layer
     hmms_count = 7
     n_hiddens = [5]*hmms_count
     
     finetuned_sda_hmm1 = finetune_hmm1(
-        sda = finetuned_sda_log_reg,
-        n_hiddens = n_hiddens,
+        sda = pretrained_sda,
+        n_components = n_hiddens,
         n_hmms = hmms_count,
         train_names = train_names,
         valid_names = valid_names,
@@ -354,7 +328,38 @@ def train_SdA(train_names,
         posttrain_window = posttrain_window
     )
     
-    '''    
+    # calculate hmm2 layer
+    finetuned_sda_hmm2 = finetune_hmm2(
+        sda = finetuned_sda_hmm1,
+        read_window = read_window,
+        read_algo = read_algo,
+        read_rank = read_rank,
+        posttrain_rank = posttrain_rank,
+        posttrain_algo = posttrain_algo,
+        window_size = window_size,
+        train_names = train_names
+    )
+    
+    # train logistic regression layer
+    if finetune_algo == 'sgd':    
+        finetuned_sda = finetune_log_layer_sgd(
+            sda = finetuned_sda_hmm2,
+            train_names = train_names,
+            valid_names = valid_names,
+            read_algo = read_algo,
+            read_window = read_window,
+            read_rank = read_rank,
+            window_size = window_size,
+            finetune_lr = finetune_lr,
+            global_epochs = global_epochs,
+            pat_epochs = pat_epochs,
+            output_folder = output_folder
+        )
+    else:        
+        finetuned_sda = finetuned_sda_hmm2
+    
+
+
     return finetuned_sda
     
 def test_sda(
@@ -415,7 +420,8 @@ def test_sda(
         test_score = float(numpy.mean(test_losses))*100
                             
         log_reg_errors.append(test_score)
-                
+        
+        
         test_visible_after_sda = numpy.array(
             [sda.get_da_output(
                 test_set_x[time: time+window_size]
@@ -428,15 +434,13 @@ def test_sda(
             half_window_size : n_test_times + half_window_size
         ]
         
-        #compute mean error value for patients in validation set hmm1
         pat_error = mean_error(
             gen_hmm = sda.hmm1,
             obs_seq = test_visible_after_sda,
             actual_states = test_y_after_sda
         )
         hmm1_error_array.append(pat_error)
-        
-                    
+                            
         new_test_visible = create_labels_after_das(
             da_output_matrix = test_visible_after_sda,
             algo = posttrain_algo,
@@ -457,7 +461,8 @@ def test_sda(
         )
         
         hmm2_error_array.append(patient_error)
-        print(patient_error, ' error (hmm) for patient ' + test_patient)
+        print(pat_error, ' error (hmm1) for patient ' + test_patient)
+        print(patient_error, ' error (hmm2) for patient ' + test_patient)
         print(test_score, ' error (log_reg) for patient ' + test_patient)
         gc.collect()
         
@@ -540,12 +545,12 @@ def test_all_params():
         predict_algo = 'viterbi'
     )
     
-    print(hmm1_errors, 'hmm')
+    print(hmm1_errors, 'hmm1')
     print('mean hmm value of error: ', numpy.round(numpy.mean(hmm1_errors), 6))
     print('min hmm value of error: ', numpy.round(numpy.amin(hmm1_errors), 6))
     print('max hmm value of error: ', numpy.round(numpy.amax(hmm1_errors), 6))
-    
-    print(hmm2_errors, 'hmm')
+        
+    print(hmm2_errors, 'hmm2')
     print('mean hmm value of error: ', numpy.round(numpy.mean(hmm2_errors), 6))
     print('min hmm value of error: ', numpy.round(numpy.amin(hmm2_errors), 6))
     print('max hmm value of error: ', numpy.round(numpy.amax(hmm2_errors), 6))

@@ -9,7 +9,7 @@ import gc
 import numpy
 import xlrd, xlwt
 
-from sklearn import hmm
+from hmmlearn import hmm
 
 from base import errors, errors2, confusion_matrix
 from ichi_reader import ICHISeqDataReader
@@ -37,10 +37,7 @@ def finish_training(pi_values, a_values, b_values, array_from_hidden, n_hidden,
     return (pi_values, a_values, b_values)
 
 def get_error_on_patient(model, visible_set, hidden_set, algo, all_labels = True, pat = ""):
-    predicted_states = model.predict(
-            obs=visible_set,
-            algorithm=algo
-    )
+    predicted_states = model.predict(numpy.asarray(visible_set).reshape((-1, 1)))
     if all_labels:
         error_array=errors(
             predicted=predicted_states,
@@ -104,10 +101,10 @@ def create_hmm(
     
     #use standart model of hmm
     hmm_model = hmm.MultinomialHMM(
-        n_components = n_hidden,
-        startprob = pi_values,
-        transmat = a_values
+        n_components = n_hidden
     )
+    hmm_model.startprob_ = pi_values
+    hmm_model.transmat_ = a_values
     hmm_model.n_symbols = n_visible
     hmm_model.emissionprob_ = b_values 
     gc.collect()
