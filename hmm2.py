@@ -108,7 +108,6 @@ def create_hmm(
     hmm_model.n_symbols = n_visible
     hmm_model.emissionprob_ = b_values 
     gc.collect()
-    print('MultinomialHMM created')
     
     return hmm_model
     
@@ -139,7 +138,6 @@ def test(
             all_labels = True
         )
         
-        print(patient_error, ' error for patient ' + valid_patient)
         gc.collect()
     return patient_error
                            

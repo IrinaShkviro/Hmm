@@ -84,8 +84,6 @@ def visualize_pretraining(train_cost,
                           da_layer,
                           datasets_folder,
                           base_folder):
-        print "Visualizer visualize_sda_costs"
-                    
         if not os.path.isdir(base_folder):
             os.makedirs(base_folder)
         os.chdir(base_folder)
@@ -93,7 +91,6 @@ def visualize_pretraining(train_cost,
         if not os.path.isdir(datasets_folder):
             os.makedirs(datasets_folder)
         os.chdir(datasets_folder)
-        print('Set output')
         
         example_folder = ('WS %f')%(window_size)
         if not os.path.isdir(example_folder):
@@ -102,13 +99,11 @@ def visualize_pretraining(train_cost,
                         
         train_cost=numpy.asarray(train_cost)
         valid_error=numpy.asarray(valid_error)
-        print('converted to array')      
         
         # print errors
         plt.figure(1)
         plt.plot(train_cost[:, 0],train_cost[:,1],label='train_cost')
         plt.plot(valid_error[:, 0],valid_error[:,1],label='valid_error')
-        print('plot created, start decor')
         
         # decorative part       
         plt.xlabel('epochs')
@@ -132,7 +127,6 @@ def visualize_pretraining(train_cost,
                 % (da_layer, learning_rate, corruption_level, n_hidden)
         plt.savefig(plot_name, dpi=200)
         plt.close()
-        print('costs visualized')
         
         os.chdir('../')
         os.chdir('../')

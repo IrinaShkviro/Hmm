@@ -562,19 +562,16 @@ def test_all_params():
     )
     
     f.write('hmm1')
-    f.write(hmm1_errors)
     f.write('mean hmm value of error: %f \n' % numpy.round(numpy.mean(hmm1_errors), 6))
     f.write('min hmm value of error: %f \n' % numpy.round(numpy.amin(hmm1_errors), 6))
     f.write('max hmm value of error: %f \n' % numpy.round(numpy.amax(hmm1_errors), 6))
         
     f.write('hmm2')
-    f.write(hmm2_errors)
     f.write('mean hmm value of error: %f \n' % numpy.round(numpy.mean(hmm2_errors), 6))
     f.write('min hmm value of error: %f \n' % numpy.round(numpy.amin(hmm2_errors), 6))
     f.write('max hmm value of error: %f \n' % numpy.round(numpy.amax(hmm2_errors), 6))
     
     f.write('log_reg')
-    f.write(log_reg_errors)
     f.write('mean reg value of error: %f \n' % numpy.round(numpy.mean(log_reg_errors), 6))
     f.write('min reg value of error: %f \n' % numpy.round(numpy.amin(log_reg_errors), 6))
     f.write('max reg value of error: %f \n' % numpy.round(numpy.amax(log_reg_errors), 6))
