@@ -189,7 +189,6 @@ def pretrain_SdA(train_names,
     
     # numpy random generator
     numpy_rng = numpy.random.RandomState(89677)
-    print('... building the model')
     # construct the stacked denoising autoencoder class
     sda = SdA(
         numpy_rng=numpy_rng,
@@ -201,9 +200,7 @@ def pretrain_SdA(train_names,
     #########################
     # PRETRAINING THE MODEL #
     #########################
-    
-    start_time = timeit.default_timer()
-    
+        
     if (pretrain_algo == "sgd"):
         pretrained_sda = pretrain_sda_sgd(
             sda = sda,
@@ -228,11 +225,8 @@ def pretrain_SdA(train_names,
             preprocess_algo = pretrain_algo,
             read_window = read_window
         )
-                         
-    end_time = timeit.default_timer()
-    
+                             
     for i in xrange(sda.n_layers):
-        print(i, 'i pretrained')
         visualize_pretraining(
             train_cost = pretrained_sda.dA_layers[i].train_cost_array,
             valid_error = pretrained_sda.dA_layers[i].valid_error_array,
@@ -245,11 +239,5 @@ def pretrain_SdA(train_names,
             base_folder = base_folder
         )
     
-    print >> sys.stderr, ('The pretraining code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
-   
-    gc.collect()
-    print('sda created')
-    
+    gc.collect()    
     return sda

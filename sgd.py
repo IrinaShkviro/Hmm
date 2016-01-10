@@ -119,10 +119,7 @@ def train_logistic_sgd(
     classifier.train_cost_array = []
     classifier.train_error_array = []
     classifier.valid_error_array = []
-    
-    train_confusion_matrix = numpy.zeros((7, 7))
-    valid_confusion_matrix = numpy.zeros((7, 7))
-    
+        
     for pat_num in xrange (len(train_names)):
         pat_epoch = 0
         # go through the training set
@@ -152,7 +149,6 @@ def train_logistic_sgd(
         while (pat_epoch < n_epochs) and (not done_looping):
             cur_train_cost =[]
             cur_train_error = []
-            train_confusion_matrix = zero_in_array(train_confusion_matrix)
             for index in xrange(n_train_samples):            
                 sample_cost, sample_error, cur_pred, cur_actual = train_model(
                     index = index,
@@ -165,10 +161,8 @@ def train_logistic_sgd(
                     
                 cur_train_cost.append(sample_cost)
                 cur_train_error.append(sample_error)
-                train_confusion_matrix[cur_actual][cur_pred] += 1
             
                 if (iter + 1) % validation_frequency == 0:
-                    valid_confusion_matrix = zero_in_array(valid_confusion_matrix)
                     # compute zero-one loss on validation set
                     validation_losses = []
                     for i in xrange(n_valid_samples):
@@ -178,22 +172,11 @@ def train_logistic_sgd(
                             valid_set_y = valid_set_y.eval()
                         )
                         validation_losses.append(validation_loss)
-                        valid_confusion_matrix[cur_actual][cur_pred] += 1
         
                     this_validation_loss = float(numpy.mean(validation_losses))*100                 
                     classifier.valid_error_array.append([])
                     classifier.valid_error_array[-1].append(classifier.epoch + float(iter)/n_train_samples)
                     classifier.valid_error_array[-1].append(this_validation_loss)
-                            
-                    print(
-                        'epoch %i, iter %i/%i, validation error %f %%' %
-                        (
-                            classifier.epoch,
-                            index + 1,
-                            n_train_samples,
-                            this_validation_loss
-                        )
-                    )
            
                     # if we got the best validation score until now
                     if this_validation_loss < best_validation_loss:
@@ -206,7 +189,6 @@ def train_logistic_sgd(
 
                 if patience*4 <= iter:
                     done_looping = True
-                    print('Done looping')
                     break
                                
             classifier.train_cost_array.append([])
@@ -223,9 +205,6 @@ def train_logistic_sgd(
             pat_epoch = pat_epoch + 1
             gc.collect()
                         
-        print(train_confusion_matrix, 'train_confusion_matrix')
-        print(valid_confusion_matrix, 'valid_confusion_matrix')
-
     return classifier
     
 def train_da_sgd(learning_rate, window_size, training_epochs, corruption_level,
@@ -262,8 +241,6 @@ def train_da_sgd(learning_rate, window_size, training_epochs, corruption_level,
     ############
     # TRAINING #
     ############
-    print(n_train_samples, 'train_samples')
-
     # go through training epochs
     while da.epoch < training_epochs:
         # go through trainng set
@@ -279,8 +256,6 @@ def train_da_sgd(learning_rate, window_size, training_epochs, corruption_level,
         cur_train_cost =[]
         
         da.epoch = da.epoch + 1
-
-        print 'Training epoch %d, cost ' % da.epoch, train_cost
 
     return da
     
@@ -366,11 +341,9 @@ def pretrain_sda_sgd(
     # compute number of examples given in training set
     n_train_patients =  len(train_names)
     
-    print '... getting the pretraining functions'
     pretraining_fns, valid_fns = pretraining_functions_sda_sgd(sda=sda,
                                                     window_size=window_size)
 
-    print '... pre-training the model'
     ## Pre-train layer-wise
     for i in xrange(sda.n_layers):
         cur_dA = sda.dA_layers[i]
@@ -430,15 +403,6 @@ def pretrain_sda_sgd(
                             )
                             cur_dA.valid_error_array[-1].append(valid_mean_error)
                                         
-                            print(
-                                'epoch %i, iter %i/%i, validation error %f %%' %
-                                (
-                                    big_epoch,
-                                    index + 1,
-                                    n_train_samples,
-                                    valid_mean_error
-                                )
-                            )
                     cur_dA.train_cost_array.append([])
                     cur_dA.train_cost_array[-1].append(big_epoch)
                     cur_dA.train_cost_array[-1].append(numpy.mean(cur_epoch_cost))
@@ -532,7 +496,6 @@ def finetune_log_layer_sgd(
     ########################
 
     # get the training, validation and testing functions for the model
-    print '... getting the finetuning functions'
     train_fn, validate_model = build_finetune_functions(
         sda=sda,
         window_size=window_size,
@@ -541,17 +504,14 @@ def finetune_log_layer_sgd(
     
     train_reader = ICHISeqDataReader(train_names)
 
-    print '... finetunning the model'
     # early-stopping parameters
     patience_increase = 25  # wait this much longer when a new best is                            # found
     improvement_threshold = 0.995  # a relative improvement of this much is
                                    # considered significant   
                                   
-    best_iter = 0
     best_valid = numpy.inf
     cur_train_cost =[]
     cur_train_error = []
-    train_confusion_matrix = numpy.zeros((7, 7))
     iter = 0
     
     for global_epoch in xrange(global_epochs):
@@ -573,7 +533,6 @@ def finetune_log_layer_sgd(
             pat_epoch = 0
     
             while (pat_epoch < pat_epochs) and (not done_looping):
-                train_confusion_matrix = zero_in_array(train_confusion_matrix)
                 for index in xrange(n_train_samples):          
                     sample_cost, sample_error, cur_pred, cur_actual = train_fn(
                         index = index,
@@ -586,7 +545,6 @@ def finetune_log_layer_sgd(
                         
                     cur_train_cost.append(sample_cost)
                     cur_train_error.append(sample_error)
-                    train_confusion_matrix[cur_actual][cur_pred] += 1
         
                     if (iter + 1) % validation_frequency == 0:
                         valid_reader = ICHISeqDataReader(valid_names)
@@ -611,16 +569,6 @@ def finetune_log_layer_sgd(
                         sda.logLayer.valid_error_array.append([])
                         sda.logLayer.valid_error_array[-1].append(sda.logLayer.epoch + float(index)/n_train_samples)
                         sda.logLayer.valid_error_array[-1].append(valid_mean_error)
-                                    
-                        print(
-                            'epoch %i, iter %i/%i, validation error %f %%' %
-                            (
-                                sda.logLayer.epoch,
-                                iter + 1,
-                                n_train_samples,
-                                this_validation_loss
-                            )
-                        )
                         
                         # if we got the best validation score until now
                         if valid_mean_error < best_valid:
@@ -630,12 +578,10 @@ def finetune_log_layer_sgd(
                                 improvement_threshold:
                                 patience = max(patience, iter * patience_increase)
         
-                            best_iter = iter
                             best_valid = valid_mean_error
         
                     if patience*4 <= iter:
                         done_looping = True
-                        print('Done looping')
                         break
                                    
                 sda.logLayer.train_cost_array.append([])
@@ -652,8 +598,6 @@ def finetune_log_layer_sgd(
                 pat_epoch = pat_epoch + 1
                 gc.collect()
                             
-            print(train_confusion_matrix, 'train_confusion_matrix')
-            print(best_iter, 'best_iter')
     visualize_finetuning(
         train_cost=sda.logLayer.train_cost_array,
         train_error=sda.logLayer.train_error_array,

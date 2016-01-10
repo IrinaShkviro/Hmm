@@ -140,8 +140,6 @@ def visualize_pretraining(train_cost,
         
 def visualize_finetuning(train_cost, train_error, valid_error, 
                     window_size, learning_rate, datasets_folder, base_folder):
-        print "Visualizer visualize finetuning costs"
-               
         if not os.path.isdir(base_folder):
             os.makedirs(base_folder)
         os.chdir(base_folder)
@@ -149,7 +147,6 @@ def visualize_finetuning(train_cost, train_error, valid_error,
         if not os.path.isdir(datasets_folder):
             os.makedirs(datasets_folder)
         os.chdir(datasets_folder)
-        print('Set output')
         
         example_folder = ('WS %f')%(window_size)
         if not os.path.isdir(example_folder):
@@ -159,13 +156,11 @@ def visualize_finetuning(train_cost, train_error, valid_error,
         train_cost=numpy.asarray(train_cost)
         train_error=numpy.asarray(train_error)
         valid_error=numpy.asarray(valid_error)
-        print('converted to arrays')
                 
         # print errors
         plt.figure(1)
         plt.plot(train_error[:, 0],train_error[:,1],label='train_error')
         plt.plot(valid_error[:, 0],valid_error[:,1],label='valid_error')
-        print('plots created, start decor')        
         
         # decorative part       
         plt.xlabel('epochs')
@@ -185,7 +180,6 @@ def visualize_finetuning(train_cost, train_error, valid_error,
         plt.legend(loc='upper left')
         plt.savefig(plot_name, dpi=200)
         plt.close()
-        print('errors visualized')
         
         # print cost
         plt.figure(2)
@@ -211,8 +205,44 @@ def visualize_finetuning(train_cost, train_error, valid_error,
         plt.savefig(plot_name, dpi=200)                    
         plt.clf()
         plt.close()
-        print('cost visualized')
         
+        os.chdir('../')
+        os.chdir('../')
+        os.chdir('../')
+        
+def visualize_validating(valid_error, 
+                    window_size, datasets_folder, base_folder):
+        if not os.path.isdir(base_folder):
+            os.makedirs(base_folder)
+        os.chdir(base_folder)
+        
+        if not os.path.isdir(datasets_folder):
+            os.makedirs(datasets_folder)
+        os.chdir(datasets_folder)
+        
+        example_folder = ('WS %f')%(window_size)
+        if not os.path.isdir(example_folder):
+            os.makedirs(example_folder)
+        os.chdir(example_folder)
+                                                                
+        valid_error=numpy.asarray(valid_error)
+                
+        # print errors
+        plt.figure(1)
+        plt.plot(valid_error[:, 0],valid_error[:,1],label='valid_error')
+        
+        # decorative part       
+        plt.xlabel('epochs')
+        plt.ylabel('error(%)')
+        plt.title(
+            ('WS: %i') % (window_size)
+        )
+        plot_name = ('error WS %i.png')%(window_size)
+        plt.legend(loc='upper left')
+        plt.savefig(plot_name, dpi=200)
+        plt.close()
+        print('errors visualized')
+                
         os.chdir('../')
         os.chdir('../')
         os.chdir('../')

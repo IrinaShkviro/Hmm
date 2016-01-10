@@ -27,6 +27,7 @@ from hmm1 import GeneralHMM, mean_error
 from hmm2 import update_params_on_patient, finish_training, get_error_on_patient
 from sda import pretrain_SdA
 from ichi_reader import ICHISeqDataReader
+from visualizer import visualize_validating
 #from cg import pretrain_sda_cg, finetune_sda_cg
 from sgd import finetune_log_layer_sgd
 from preprocess import filter_data, create_int_labels, create_av_disp, create_av
@@ -119,7 +120,6 @@ def finetune_hmm2(sda,
     hmm_model.n_symbols = n_visible
     hmm_model.emissionprob_ = b_values 
     gc.collect()
-    print('MultinomialHMM created')
     
     sda.set_hmm2(
         hmm2 = hmm_model
@@ -181,7 +181,8 @@ def finetune_hmm1(sda,
                   window_size,
                   posttrain_algo,
                   posttrain_rank,
-                  posttrain_window):
+                  posttrain_window,
+                  output_folder):
                       
     # set hmm1 layer on sda
     sda.set_hmm1(
@@ -238,9 +239,17 @@ def finetune_hmm1(sda,
                 
             gc.collect()
             
+    visualize_validating(
+        valid_error=sda.hmm1.valid_error_array,
+        window_size=window_size,
+        datasets_folder=output_folder,
+        base_folder='finetune_hmm1'
+    )
+            
     return sda
 
-def train_SdA(train_names,
+def train_SdA(f,
+              train_names,
               valid_names,
               read_window,
               read_algo,
@@ -300,9 +309,7 @@ def train_SdA(train_names,
     
     end_time = timeit.default_timer()
         
-    print >> sys.stderr, ('The pretraining code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
+    f.write('The pretraining code ran for %.2fm' % ((end_time - start_time) / 60.))
 
     ########################
     # FINETUNING THE MODEL #
@@ -325,7 +332,8 @@ def train_SdA(train_names,
         window_size = window_size,
         posttrain_algo = posttrain_algo,
         posttrain_rank = posttrain_rank,
-        posttrain_window = posttrain_window
+        posttrain_window = posttrain_window,
+        output_folder = output_folder
     )
     
     # calculate hmm2 layer
@@ -363,6 +371,7 @@ def train_SdA(train_names,
     return finetuned_sda
     
 def test_sda(
+    f,
     sda,
     test_names,
     read_window,
@@ -461,9 +470,10 @@ def test_sda(
         )
         
         hmm2_error_array.append(patient_error)
-        print(pat_error, ' error (hmm1) for patient ' + test_patient)
-        print(patient_error, ' error (hmm2) for patient ' + test_patient)
-        print(test_score, ' error (log_reg) for patient ' + test_patient)
+        f.write('patient %s\n' % test_patient)
+        f.write('error (hmm1)  %f\n' % pat_error)
+        f.write('error (hmm2) %f\n' % patient_error)
+        f.write('error (log_reg) %f\n' %test_score)
         gc.collect()
         
     return hmm1_error_array, hmm2_error_array, log_reg_errors
@@ -509,7 +519,12 @@ def test_all_params():
     
     output_folder=('all_train, %s')%(test_data)
 
-    trained_sda = train_SdA(    
+    os.chdir('debug_info_folder')
+    folder_name = ('%s.txt')%(test_data[0])
+    f = open(folder_name, 'w')
+    os.chdir('../')
+    trained_sda = train_SdA(   
+        f = f,
         train_names = ['p002'],
         valid_names = valid_names,
         read_window = read_window,
@@ -534,6 +549,7 @@ def test_all_params():
     )
     
     hmm1_errors, hmm2_errors, log_reg_errors = test_sda(
+        f = f,
         sda = trained_sda,
         test_names = test_data,
         read_window = read_window,
@@ -545,20 +561,25 @@ def test_all_params():
         predict_algo = 'viterbi'
     )
     
-    print(hmm1_errors, 'hmm1')
-    print('mean hmm value of error: ', numpy.round(numpy.mean(hmm1_errors), 6))
-    print('min hmm value of error: ', numpy.round(numpy.amin(hmm1_errors), 6))
-    print('max hmm value of error: ', numpy.round(numpy.amax(hmm1_errors), 6))
+    f.write('hmm1')
+    f.write(hmm1_errors)
+    f.write('mean hmm value of error: %f \n' % numpy.round(numpy.mean(hmm1_errors), 6))
+    f.write('min hmm value of error: %f \n' % numpy.round(numpy.amin(hmm1_errors), 6))
+    f.write('max hmm value of error: %f \n' % numpy.round(numpy.amax(hmm1_errors), 6))
         
-    print(hmm2_errors, 'hmm2')
-    print('mean hmm value of error: ', numpy.round(numpy.mean(hmm2_errors), 6))
-    print('min hmm value of error: ', numpy.round(numpy.amin(hmm2_errors), 6))
-    print('max hmm value of error: ', numpy.round(numpy.amax(hmm2_errors), 6))
+    f.write('hmm2')
+    f.write(hmm2_errors)
+    f.write('mean hmm value of error: %f \n' % numpy.round(numpy.mean(hmm2_errors), 6))
+    f.write('min hmm value of error: %f \n' % numpy.round(numpy.amin(hmm2_errors), 6))
+    f.write('max hmm value of error: %f \n' % numpy.round(numpy.amax(hmm2_errors), 6))
     
-    print(log_reg_errors, 'log_reg')
-    print('mean reg value of error: ', numpy.round(numpy.mean(log_reg_errors), 6))
-    print('min reg value of error: ', numpy.round(numpy.amin(log_reg_errors), 6))
-    print('max reg value of error: ', numpy.round(numpy.amax(log_reg_errors), 6))
+    f.write('log_reg')
+    f.write(log_reg_errors)
+    f.write('mean reg value of error: %f \n' % numpy.round(numpy.mean(log_reg_errors), 6))
+    f.write('min reg value of error: %f \n' % numpy.round(numpy.amin(log_reg_errors), 6))
+    f.write('max reg value of error: %f \n' % numpy.round(numpy.amax(log_reg_errors), 6))
+    
+    f.close()
     
     '''
     train_data = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
@@ -627,5 +648,4 @@ def create_label_after_das(da_output_seq, algo, rank, window):
     return d_x[0]
 
 if __name__ == '__main__':
-    print sys.stdout.encoding
     test_all_params()
