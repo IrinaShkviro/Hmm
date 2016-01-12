@@ -502,9 +502,9 @@ def test_all_params():
     
     corruption_levels = [.1, .2]
     hidden_layers_sizes = [window_size/2, window_size/3]
-    pretraining_epochs = 1
-    pretraining_pat_epochs = 1
-    pretrain_lr=.03        
+    pretraining_epochs = 25
+    pretraining_pat_epochs = 2
+    pretrain_lr=.003        
     pretrain_algo = "sgd"
     
     posttrain_rank = 5    
@@ -514,100 +514,75 @@ def test_all_params():
     finetune_algo = 'sgd'
     finetune_lr = 0.003
     
-    global_epochs = 1
-    pat_epochs = 1
+    global_epochs = 25
+    pat_epochs = 2
     
-    output_folder=('all_train, %s')%(test_data)
-
-    os.chdir('debug_info_folder')
-    folder_name = ('%s.txt')%(test_data[0])
-    f = open(folder_name, 'w')
-    os.chdir('../')
-    trained_sda = train_SdA(   
-        f = f,
-        train_names = ['p002'],
-        valid_names = valid_names,
-        read_window = read_window,
-        read_algo = read_algo,
-        read_rank = read_rank,
-        window_size = window_size,
-        corruption_levels = corruption_levels,
-        hidden_layers_sizes = hidden_layers_sizes,
-        pretraining_epochs = pretraining_epochs,
-        pretrain_lr = pretrain_lr,
-        pretrain_algo = pretrain_algo,
-        pretraining_pat_epochs = pretraining_pat_epochs,
-        output_folder = output_folder,
-        base_folder = 'sda_hmm2', 
-        posttrain_rank = posttrain_rank,
-        posttrain_algo = posttrain_algo,
-        posttrain_window = posttrain_window,
-        finetune_algo = finetune_algo,
-        finetune_lr = finetune_lr,
-        global_epochs = global_epochs,
-        pat_epochs = pat_epochs
-    )
-    
-    hmm1_errors, hmm2_errors, log_reg_errors = test_sda(
-        f = f,
-        sda = trained_sda,
-        test_names = test_data,
-        read_window = read_window,
-        read_algo = read_algo,
-        read_rank = read_rank,
-        window_size = window_size,
-        posttrain_rank = posttrain_rank,
-        posttrain_algo = posttrain_algo,
-        predict_algo = 'viterbi'
-    )
-    
-    f.write('hmm1')
-    f.write('mean hmm value of error: %f \n' % numpy.round(numpy.mean(hmm1_errors), 6))
-    f.write('min hmm value of error: %f \n' % numpy.round(numpy.amin(hmm1_errors), 6))
-    f.write('max hmm value of error: %f \n' % numpy.round(numpy.amax(hmm1_errors), 6))
-        
-    f.write('hmm2')
-    f.write('mean hmm value of error: %f \n' % numpy.round(numpy.mean(hmm2_errors), 6))
-    f.write('min hmm value of error: %f \n' % numpy.round(numpy.amin(hmm2_errors), 6))
-    f.write('max hmm value of error: %f \n' % numpy.round(numpy.amax(hmm2_errors), 6))
-    
-    f.write('log_reg')
-    f.write('mean reg value of error: %f \n' % numpy.round(numpy.mean(log_reg_errors), 6))
-    f.write('min reg value of error: %f \n' % numpy.round(numpy.amin(log_reg_errors), 6))
-    f.write('max reg value of error: %f \n' % numpy.round(numpy.amax(log_reg_errors), 6))
-    
-    f.close()
-    
-    '''
-    train_data = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
-                  'p10a','p011','p012','p013','p014','p15a','p15b','p016',
-                  'p017','p018','p019','p020','p021','p022','p023','p025',
-                  'p026','p027','p028','p029','p030','p031','p032','p033',
-                  'p034','p035','p036','p037','p038','p040','p042','p043',
-                  'p044','p045','p047','p048','p049','p050','p051']
+    train_data = without_valid
+                  
     for test_pat_num in xrange(len(train_data)):
         test_pat = train_data.pop(test_pat_num)
-        output_folder=('all_data, [%s]')%(test_pat)
-        trained_sda = train_SdA(
-            train_names=train_data,
-            output_folder=output_folder,
-            base_folder='SdA_second_HMM',
-            window_size=window_size,
-            corruption_levels=corruption_levels,
-            pretrain_lr=pretrain_lr,
-            start_base=start_base,
-            rank=rank,
-            pretraining_epochs=15
-        )
-        test_sda(sda=trained_sda,
-            test_names=[test_pat],
-            rank=rank,
-            start_base=start_base,
-            window_size=window_size
-        )
-        train_data.insert(test_pat_num, test_pat)
-    '''
+        output_folder=('all_data, %s')%(test_pat)
 
+	os.chdir('debug_info_folder')
+	folder_name = ('%s.txt')%(test_pat)
+	f = open(folder_name, 'w')
+	os.chdir('../')
+	trained_sda = train_SdA(   
+	        f = f,
+	        train_names = train_data,
+	        valid_names = valid_names,
+	        read_window = read_window,
+	        read_algo = read_algo,
+	        read_rank = read_rank,
+	        window_size = window_size,
+	        corruption_levels = corruption_levels,
+	        hidden_layers_sizes = hidden_layers_sizes,
+	        pretraining_epochs = pretraining_epochs,
+	        pretrain_lr = pretrain_lr,
+	        pretrain_algo = pretrain_algo,
+	        pretraining_pat_epochs = pretraining_pat_epochs,
+	        output_folder = output_folder,
+	        base_folder = 'sda_3_classifiers', 
+	        posttrain_rank = posttrain_rank,
+	        posttrain_algo = posttrain_algo,
+	        posttrain_window = posttrain_window,
+	        finetune_algo = finetune_algo,
+	        finetune_lr = finetune_lr,
+	        global_epochs = global_epochs,
+	        pat_epochs = pat_epochs
+	    )
+	    
+	hmm1_errors, hmm2_errors, log_reg_errors = test_sda(
+	        f = f,
+	        sda = trained_sda,
+	        test_names = [test_pat],
+	        read_window = read_window,
+	        read_algo = read_algo,
+	        read_rank = read_rank,
+	        window_size = window_size,
+	        posttrain_rank = posttrain_rank,
+	        posttrain_algo = posttrain_algo,
+	        predict_algo = 'viterbi'
+	    )
+	    
+	f.write('hmm1')
+	f.write('mean hmm value of error: %f \n' % numpy.round(numpy.mean(hmm1_errors), 6))
+	f.write('min hmm value of error: %f \n' % numpy.round(numpy.amin(hmm1_errors), 6))
+	f.write('max hmm value of error: %f \n' % numpy.round(numpy.amax(hmm1_errors), 6))
+	        
+	f.write('hmm2')
+	f.write('mean hmm value of error: %f \n' % numpy.round(numpy.mean(hmm2_errors), 6))
+	f.write('min hmm value of error: %f \n' % numpy.round(numpy.amin(hmm2_errors), 6))
+	f.write('max hmm value of error: %f \n' % numpy.round(numpy.amax(hmm2_errors), 6))
+	    
+	f.write('log_reg')
+	f.write('mean reg value of error: %f \n' % numpy.round(numpy.mean(log_reg_errors), 6))
+	f.write('min reg value of error: %f \n' % numpy.round(numpy.amin(log_reg_errors), 6))
+	f.write('max reg value of error: %f \n' % numpy.round(numpy.amax(log_reg_errors), 6))
+	    
+	f.close()
+	train_data.insert(test_pat_num, test_pat)
+    
 def create_labels_after_das(da_output_matrix, algo, rank, window):
     return [create_label_after_das(da_output_matrix[i], algo, rank, window)
         for i in xrange(len(da_output_matrix))]
